@@ -84,6 +84,32 @@ async def test_service_page_reads_response_before_navigation() -> None:
     ) == {"courses": [{"id": 42}]}
 
 
+@pytest.mark.asyncio
+async def test_authentication_check_retries_navigation_context_reset() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def evaluate(self, expression: str) -> int:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError(
+                    "Page.evaluate: Execution context was destroyed, most likely because of a navigation"
+                )
+            return 42
+
+        async def wait_for_timeout(self, milliseconds: int) -> None:
+            return None
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=Path("data/browser-profile"),
+        data_dir=Path("data"),
+    )
+
+    assert await source._is_authenticated(FakePage())
+
+
 def test_assignment_html_extracts_dates_description_submission_and_files() -> None:
     html = """
     <html><head><title>Assignment 5 | Moodle</title></head><body>

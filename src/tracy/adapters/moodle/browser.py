@@ -339,8 +339,16 @@ class MoodleBrowserSource:
     async def _is_authenticated(self, page: Any) -> bool:
         """Use Moodle's own runtime config instead of guessing the login page URL."""
 
-        user_id = await page.evaluate("() => window.M?.cfg?.userId || 0")
-        return bool(user_id)
+        for attempt in range(3):
+            try:
+                user_id = await page.evaluate("() => window.M?.cfg?.userId || 0")
+                return bool(user_id)
+            except Exception as error:
+                is_navigation_race = "execution context was destroyed" in str(error).lower()
+                if not is_navigation_race or attempt == 2:
+                    raise
+                await page.wait_for_timeout(250)
+        return False
 
     @staticmethod
     def _service_result_matches(method: str, data: Any) -> bool:
