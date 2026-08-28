@@ -26,7 +26,6 @@ _STOP_WORDS = {
     "do",
     "for",
     "how",
-    "i",
     "in",
     "is",
     "me",
@@ -43,14 +42,26 @@ _STOP_WORDS = {
     "with",
     "you",
 }
+_ROMAN_NUMERALS = {"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5"}
+_SYLLABUS_MARKERS = {
+    "course",
+    "evaluation",
+    "hours",
+    "learning",
+    "objectives",
+    "outline",
+    "pedagogy",
+    "prerequisites",
+}
 
 
 def _tokens(value: str) -> list[str]:
-    return [
-        token
-        for token in re.findall(r"[a-z0-9]+", value.casefold())
-        if token not in _STOP_WORDS and len(token) > 1
-    ]
+    tokens: list[str] = []
+    for token in re.findall(r"[a-z0-9]+", value.casefold()):
+        token = _ROMAN_NUMERALS.get(token, token)
+        if token not in _STOP_WORDS and (len(token) > 1 or token.isdigit()):
+            tokens.append(token)
+    return tokens
 
 
 def _chunks(text: str, limit: int = 1400) -> Iterable[str]:
@@ -158,9 +169,13 @@ class DocumentIndex:
             text_tokens = set(_tokens(chunk.text))
             score = (
                 5 * len(query_tokens & name_tokens)
-                + 3 * len(query_tokens & course_tokens)
-                + len(query_tokens & text_tokens)
+                + 2 * len(query_tokens & course_tokens)
+                + 2 * len(query_tokens & text_tokens)
             )
+            if "syllabus" in query_tokens:
+                score += 3 * len(_SYLLABUS_MARKERS & text_tokens)
+            if "lab" in course_tokens and "lab" not in query_tokens:
+                score -= 10
             if score:
                 ranked.append((score, chunk))
         ranked.sort(key=lambda item: (-item[0], item[1].document_name, item[1].page or 0))

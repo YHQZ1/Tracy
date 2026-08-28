@@ -3,9 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from tracy.adapters.documents.index import build_document_index
+from tracy.adapters.documents.index import (
+    DocumentIndex,
+    JsonDocumentIndexStore,
+    build_document_index,
+)
 from tracy.application.answer_question import answer_question
-from tracy.domain.entities import Course, Document, SyncSnapshot
+from tracy.domain.entities import Course, Document, DocumentChunk, SyncSnapshot
 from tracy.persistence.json_store import JsonSnapshotStore
 
 
@@ -38,3 +42,67 @@ async def test_document_index_returns_course_scoped_citation(tmp_path: Path) -> 
     assert "Compiler Construction" in answer
     assert "Lexical analysis creates tokens" in answer
     assert "compiler-notes.txt" in answer
+
+
+@pytest.mark.asyncio
+async def test_document_search_prioritizes_requested_unit_and_syllabus(tmp_path: Path) -> None:
+    JsonSnapshotStore(tmp_path).save(
+        SyncSnapshot(
+            synced_at=datetime.now(UTC),
+            courses=(Course(id="1", name="Compiler Construction"),),
+        )
+    )
+    JsonDocumentIndexStore(tmp_path).save(
+        DocumentIndex(
+            (
+                DocumentChunk(
+                    id="unit-i",
+                    document_id="i",
+                    course_id="1",
+                    course_name="Compiler Construction",
+                    document_name="Compiler_Construction_Unit_I.pptx",
+                    source_url="https://moodle.example/unit-i",
+                    text="Compiler Construction Unit I",
+                    page=1,
+                ),
+                DocumentChunk(
+                    id="unit-ii",
+                    document_id="ii",
+                    course_id="1",
+                    course_name="Compiler Construction",
+                    document_name="Compiler_Construction_Unit_II.pptx",
+                    source_url="https://moodle.example/unit-ii",
+                    text="Compiler Construction Unit II Role of a Parser",
+                    page=1,
+                ),
+                DocumentChunk(
+                    id="syllabus",
+                    document_id="syllabus",
+                    course_id="1",
+                    course_name="Compiler Construction",
+                    document_name="TE7751_Compiler_Construction.pdf",
+                    source_url="https://moodle.example/syllabus",
+                    text="Course Outline: Learning Objectives, Hours, Evaluation, and Pedagogy",
+                    page=1,
+                ),
+                DocumentChunk(
+                    id="lab-syllabus",
+                    document_id="lab-syllabus",
+                    course_id="1",
+                    course_name="Compiler Construction Lab",
+                    document_name="T7478_Compiler_Construction_Lab.pdf",
+                    source_url="https://moodle.example/lab-syllabus",
+                    text="Course Outline: Learning Objectives, Hours, Evaluation, and Pedagogy",
+                    page=1,
+                ),
+            )
+        )
+    )
+
+    unit_answer = await answer_question("what is the unit 2 of compiler construction?", tmp_path)
+    syllabus_answer = await answer_question(
+        "what is the syllabus of compiler construction?", tmp_path
+    )
+
+    assert "Compiler_Construction_Unit_II.pptx" in unit_answer.splitlines()[1]
+    assert "TE7751_Compiler_Construction.pdf" in syllabus_answer.splitlines()[1]
