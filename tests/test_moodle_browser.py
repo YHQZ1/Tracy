@@ -1,14 +1,76 @@
+import inspect
 import json
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from tracy.adapters.moodle.browser import _service_data, parse_assignment_html
+import pytest
+
+from tracy.adapters.moodle.browser import (
+    MoodleBrowserSource,
+    _service_data,
+    parse_assignment_html,
+)
 
 
 def test_service_data_decodes_moodle_nested_json() -> None:
     payload = '[{"error": false, "data": "{\\"courses\\": [{\\"id\\": 42}]}"}]'
 
     assert _service_data(json.loads(payload)) == {"courses": [{"id": 42}]}
+
+
+@pytest.mark.asyncio
+async def test_service_page_reads_response_before_navigation() -> None:
+    class FakeResponse:
+        url = "https://moodle.example/lib/ajax/service.php"
+
+        def __init__(self) -> None:
+            self.navigated = False
+
+        async def json(self) -> object:
+            assert not self.navigated
+            return [{"error": False, "data": '{"courses": [{"id": 42}]}'}]
+
+        async def text(self) -> str:
+            if self.navigated:
+                raise RuntimeError("response body unavailable after navigation")
+            return '{"courses": [{"id": 42}]}'
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.listeners: list[tuple[str, object]] = []
+
+        def on(self, event: str, callback: object) -> None:
+            self.listeners.append((event, callback))
+
+        def remove_listener(self, event: str, callback: object) -> None:
+            self.listeners.remove((event, callback))
+
+        async def goto(self, url: str, wait_until: str) -> None:
+            response = FakeResponse()
+            for event, callback in self.listeners:
+                if event != "response":
+                    continue
+                result = callback(response)  # type: ignore[operator]
+                if inspect.isawaitable(result):
+                    await result
+            response.navigated = True
+
+        async def wait_for_timeout(self, milliseconds: int) -> None:
+            return None
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=Path("data/browser-profile"),
+        data_dir=Path("data"),
+    )
+
+    assert await source._service_page(
+        FakePage(),
+        "https://moodle.example/my/",
+        "core_course_get_enrolled_courses_by_timeline_classification",
+        RuntimeError,
+    ) == {"courses": [{"id": 42}]}
 
 
 def test_assignment_html_extracts_dates_description_submission_and_files() -> None:

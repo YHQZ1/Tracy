@@ -354,26 +354,28 @@ class MoodleBrowserSource:
 
     async def _service_page(self, page: Any, url: str, method: str, timeout_error: Any) -> Any:
         responses: list[tuple[str, Any]] = []
-        tasks: list[Any] = []
 
-        async def read_response(response: Any) -> None:
+        async def capture_response(response: Any) -> None:
+            if "/lib/ajax/service.php" not in response.url:
+                return
             try:
-                payload = json.loads(await response.text())
+                # Read the body while this response still belongs to the active
+                # navigation. Playwright may invalidate it after the page moves on.
+                payload = await response.json()
                 responses.append((response.url, _service_data(payload)))
             except (json.JSONDecodeError, MoodleConnectionError):
                 return
-
-        def capture_response(response: Any) -> None:
-            if "/lib/ajax/service.php" in response.url:
-                tasks.append(asyncio.create_task(read_response(response)))
+            except Exception:
+                # Moodle pages issue several background service requests. A
+                # response that disappears during navigation is not the target
+                # request and should not mask the useful response from the page.
+                return
 
         page.on("response", capture_response)
 
         try:
             await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(750)
-            if tasks:
-                await asyncio.gather(*tasks)
         except timeout_error as error:
             raise MoodleConnectionError(
                 f"Moodle did not return the expected AJAX function {method} while loading {url}."
