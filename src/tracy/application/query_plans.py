@@ -276,14 +276,14 @@ def answer_from_query_plan(
         if not summaries:
             return "I could not find attendance data in the latest Moodle snapshot."
         if plan.group_by == "overall":
-            marked_sessions = sum(item.marked_sessions for item in summaries)
+            total_sessions = sum(item.total_sessions for item in summaries)
             attended_sessions = sum(item.attended_sessions for item in summaries)
-            if marked_sessions == 0:
+            if total_sessions == 0:
                 return "I could not calculate overall attendance from the latest Moodle snapshot."
-            percentage = attended_sessions / marked_sessions * 100
+            percentage = attended_sessions / total_sessions * 100
             answer = (
-                f"Overall attendance: {attended_sessions}/{marked_sessions} "
-                f"marked sessions attended ({percentage:.2f}%)"
+                f"Overall attendance: {attended_sessions}/{total_sessions} "
+                f"total sessions attended ({percentage:.2f}%)"
             )
             source_urls = sorted(
                 {item.source_url for item in summaries if item.source_url}

@@ -161,7 +161,7 @@ def test_offline_attendance_question_infers_course() -> None:
     assert "9/12" in answer
 
 
-def test_overall_attendance_uses_marked_sessions_as_denominator() -> None:
+def test_overall_attendance_uses_total_sessions_as_denominator() -> None:
     snapshot = SyncSnapshot(
         synced_at=datetime.now(UTC),
         courses=(
@@ -189,7 +189,7 @@ def test_overall_attendance_uses_marked_sessions_as_denominator() -> None:
             AttendanceSummary(
                 course_id="3",
                 course_name="Project",
-                total_sessions=3,
+                total_sessions=0,
                 marked_sessions=0,
                 attended_sessions=0,
                 percentage=None,
@@ -201,7 +201,7 @@ def test_overall_attendance_uses_marked_sessions_as_denominator() -> None:
         QueryPlan(intent="attendance", group_by="overall"), snapshot
     )
 
-    assert answer == "Overall attendance: 11/13 marked sessions attended (84.62%)"
+    assert answer == "Overall attendance: 11/15 total sessions attended (73.33%)"
 
 
 class StaticPlanner:
@@ -312,4 +312,4 @@ async def test_answer_question_recovers_overall_attendance_grouping(tmp_path) ->
         planner=StaticPlanner(QueryPlan(intent="attendance")),
     )
 
-    assert answer == "Overall attendance: 6/8 marked sessions attended (75.00%)"
+    assert answer == "Overall attendance: 6/10 total sessions attended (60.00%)"
