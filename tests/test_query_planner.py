@@ -162,3 +162,12 @@ def test_heuristic_planner_recognizes_attendance_projection_patterns() -> None:
     assert needed.attendance_detail == "required_sessions"
     assert needed.attendance_threshold == 80
     assert suggestions.attendance_detail == "skip_suggestions"
+
+
+def test_heuristic_planner_parses_bare_attendance_threshold() -> None:
+    plan = heuristic_query_plan(
+        "How many classes can I miss to stay above 80?"
+    )
+
+    assert plan.attendance_detail == "max_misses"
+    assert plan.attendance_threshold == 80

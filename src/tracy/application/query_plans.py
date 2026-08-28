@@ -129,7 +129,16 @@ def _attendance_projection(normalized: str) -> str | None:
 
 def _attendance_threshold(normalized: str) -> float | None:
     match = re.search(r"\b(\d+(?:\.\d+)?)\s*%", normalized)
-    return float(match.group(1)) if match else None
+    if match:
+        return float(match.group(1))
+    match = re.search(
+        r"\b(?:above|below|reach|get to|target(?:\s+of)?|at least)\s+"
+        r"(\d+(?:\.\d+)?)\b",
+        normalized,
+    )
+    if match and float(match.group(1)) <= 100:
+        return float(match.group(1))
+    return None
 
 
 def _normalize_course_name(value: str) -> str:
