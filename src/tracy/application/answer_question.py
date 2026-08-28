@@ -4,7 +4,9 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from tracy.adapters.documents.index import JsonDocumentIndexStore
-from tracy.domain.entities import Assignment, SyncSnapshot
+from tracy.config import get_settings
+from tracy.domain.entities import Assignment, DocumentChunk, SyncSnapshot
+from tracy.domain.ports import AnswerComposer
 from tracy.persistence.json_store import JsonSnapshotStore
 
 
@@ -49,13 +51,9 @@ def _answer_from_snapshot(
             else:
                 start, end = _upcoming_this_week_bounds(current_date)
             assignments = [
-                item
-                for item in assignments
-                if item.due_at and start <= item.due_at.date() < end
+                item for item in assignments if item.due_at and start <= item.due_at.date() < end
             ]
-        assignments.sort(
-            key=lambda item: item.due_at or datetime.max.replace(tzinfo=UTC)
-        )
+        assignments.sort(key=lambda item: item.due_at or datetime.max.replace(tzinfo=UTC))
         if not assignments:
             return "I found no matching assignments in the latest Moodle snapshot."
         course_names = {course.id: course.name for course in snapshot.courses}
@@ -69,7 +67,42 @@ def _answer_from_snapshot(
     )
 
 
-async def answer_question(question: str, data_dir: Path) -> str:
+def _document_context(results: list[DocumentChunk]) -> str:
+    context: list[str] = []
+    for index, chunk in enumerate(results, 1):
+        location = f", page/slide {chunk.page}" if chunk.page else ""
+        context.append(
+            f"[{index}] {chunk.document_name} — {chunk.course_name}{location}\n"
+            f"Source URL: {chunk.source_url}\n"
+            f"Excerpt:\n{chunk.text}"
+        )
+    return "\n\n".join(context)
+
+
+def _retrieval_answer(results: list[DocumentChunk]) -> str:
+    lines = ["Relevant documents:"]
+    for chunk in results:
+        location = f", page/slide {chunk.page}" if chunk.page else ""
+        lines.append(f"- {chunk.document_name} — {chunk.course_name}{location}")
+        lines.append(f"  {chunk.text[:320]}")
+        lines.append(f"  Source: {chunk.source_url}")
+    return "\n".join(lines)
+
+
+def _default_composer() -> AnswerComposer | None:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        return None
+    try:
+        from tracy.adapters.llm.openai import OpenAIAnswerComposer
+    except ModuleNotFoundError as error:
+        raise RuntimeError("OpenAI support is not installed. Run `uv sync --extra ai`.") from error
+    return OpenAIAnswerComposer(model=settings.openai_model, api_key=settings.openai_api_key)
+
+
+async def answer_question(
+    question: str, data_dir: Path, *, composer: AnswerComposer | None = None
+) -> str:
     """Answer supported structured questions from the local snapshot."""
 
     snapshot = JsonSnapshotStore(data_dir).load()
@@ -84,10 +117,7 @@ async def answer_question(question: str, data_dir: Path) -> str:
     if not results:
         return "I could not find relevant documents in the latest document index."
 
-    lines = ["Relevant documents:"]
-    for chunk in results:
-        location = f", page/slide {chunk.page}" if chunk.page else ""
-        lines.append(f"- {chunk.document_name} — {chunk.course_name}{location}")
-        lines.append(f"  {chunk.text[:320]}")
-        lines.append(f"  Source: {chunk.source_url}")
-    return "\n".join(lines)
+    selected_composer = composer or _default_composer()
+    if selected_composer is None:
+        return _retrieval_answer(results)
+    return await selected_composer.compose(question, _document_context(results))

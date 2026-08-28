@@ -13,6 +13,17 @@ from tracy.domain.entities import Course, Document, DocumentChunk, SyncSnapshot
 from tracy.persistence.json_store import JsonSnapshotStore
 
 
+class RecordingComposer:
+    def __init__(self) -> None:
+        self.question = ""
+        self.context = ""
+
+    async def compose(self, question: str, context: str) -> str:
+        self.question = question
+        self.context = context
+        return "Compiler Construction is a 3-credit course. [1]"
+
+
 @pytest.mark.asyncio
 async def test_document_index_returns_course_scoped_citation(tmp_path: Path) -> None:
     document_path = tmp_path / "compiler-notes.txt"
@@ -117,3 +128,39 @@ async def test_document_search_prioritizes_requested_unit_and_syllabus(tmp_path:
     assert "Compiler_Construction_Unit_II.pptx" in unit_answer.splitlines()[1]
     assert "TE7751_Compiler_Construction.pdf" in syllabus_answer.splitlines()[1]
     assert "Syllabus_1_.pdf" not in syllabus_answer
+
+
+@pytest.mark.asyncio
+async def test_document_question_uses_composer_with_cited_context(tmp_path: Path) -> None:
+    JsonSnapshotStore(tmp_path).save(
+        SyncSnapshot(
+            synced_at=datetime.now(UTC),
+            courses=(Course(id="1", name="Compiler Construction"),),
+        )
+    )
+    JsonDocumentIndexStore(tmp_path).save(
+        DocumentIndex(
+            (
+                DocumentChunk(
+                    id="syllabus",
+                    document_id="syllabus",
+                    course_id="1",
+                    course_name="Compiler Construction",
+                    document_name="Compiler Syllabus",
+                    source_url="https://moodle.example/compiler-syllabus",
+                    text="Compiler Construction Course Credit: 3.",
+                    page=2,
+                ),
+            )
+        )
+    )
+    composer = RecordingComposer()
+
+    answer = await answer_question(
+        "What is the credit value of Compiler Construction?", tmp_path, composer=composer
+    )
+
+    assert answer == "Compiler Construction is a 3-credit course. [1]"
+    assert "Compiler Syllabus" in composer.context
+    assert "page/slide 2" in composer.context
+    assert "https://moodle.example/compiler-syllabus" in composer.context
