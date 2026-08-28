@@ -324,8 +324,7 @@ class MoodleBrowserSource:
 
     async def _ensure_authenticated(self, page: Any) -> None:
         await page.goto(f"{self.base_url}/my/", wait_until="domcontentloaded")
-        login_form = await page.locator("input[name='username']").count()
-        if "/login/" in page.url or login_form:
+        if not await self._is_authenticated(page):
             if self.headless:
                 raise MoodleLoginRequired(
                     "The Moodle browser profile is not signed in. Run sync once with "
@@ -334,22 +333,60 @@ class MoodleBrowserSource:
             print("Log into Moodle in the opened browser window, then return here.")
             await asyncio.to_thread(input, "Press Enter after Moodle is open: ")
             await page.goto(f"{self.base_url}/my/", wait_until="domcontentloaded")
-            if "/login/" in page.url or await page.locator("input[name='username']").count():
+            if not await self._is_authenticated(page):
                 raise MoodleLoginRequired("Moodle login was not completed.")
 
+    async def _is_authenticated(self, page: Any) -> bool:
+        """Use Moodle's own runtime config instead of guessing the login page URL."""
+
+        user_id = await page.evaluate("() => window.M?.cfg?.userId || 0")
+        return bool(user_id)
+
+    @staticmethod
+    def _service_result_matches(method: str, data: Any) -> bool:
+        if not isinstance(data, dict):
+            return False
+        if method == "core_course_get_enrolled_courses_by_timeline_classification":
+            return isinstance(data.get("courses"), list)
+        if method == "core_courseformat_get_state":
+            return isinstance(data.get("cm"), list) and isinstance(data.get("section"), list)
+        return True
+
     async def _service_page(self, page: Any, url: str, method: str, timeout_error: Any) -> Any:
-        def is_target(response: Any) -> bool:
-            return "/lib/ajax/service.php" in response.url and method in unquote(response.url)
+        responses: list[tuple[str, Any]] = []
+        tasks: list[Any] = []
+
+        async def read_response(response: Any) -> None:
+            try:
+                payload = json.loads(await response.text())
+                responses.append((response.url, _service_data(payload)))
+            except (json.JSONDecodeError, MoodleConnectionError):
+                return
+
+        def capture_response(response: Any) -> None:
+            if "/lib/ajax/service.php" in response.url:
+                tasks.append(asyncio.create_task(read_response(response)))
+
+        page.on("response", capture_response)
 
         try:
-            async with page.expect_response(is_target, timeout=self.timeout_ms) as response_info:
-                await page.goto(url, wait_until="domcontentloaded")
-            response = await response_info.value
-            return _service_data(json.loads(await response.text()))
+            await page.goto(url, wait_until="domcontentloaded")
+            await page.wait_for_timeout(750)
+            if tasks:
+                await asyncio.gather(*tasks)
         except timeout_error as error:
             raise MoodleConnectionError(
                 f"Moodle did not return the expected AJAX function {method} while loading {url}."
             ) from error
+        finally:
+            page.remove_listener("response", capture_response)
+
+        for response_url, data in responses:
+            if method in unquote(response_url) or self._service_result_matches(method, data):
+                return data
+        raise MoodleConnectionError(
+            f"Moodle did not return the expected AJAX function {method} while loading {url}."
+        )
 
     async def _fetch_courses(self, page: Any, timeout_error: Any) -> list[Course]:
         data = await self._service_page(
