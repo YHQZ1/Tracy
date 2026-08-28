@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from tracy.application.answer_question import _answer_from_snapshot, answer_question
+from tracy.application.query_plans import answer_from_query_plan
 from tracy.domain.entities import Assignment, Course, SyncSnapshot
 from tracy.domain.query import QueryPlan
 from tracy.persistence.json_store import JsonSnapshotStore
@@ -68,12 +69,60 @@ def test_this_week_assignments_exclude_past_dates_and_show_course() -> None:
     assert "Databases" in historical_answer
 
 
+def test_course_filter_ignores_punctuation_and_selects_one_course() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(
+            Course(id="theory", name="2023-27 – Sem – VII – Compiler Construction"),
+            Course(id="lab", name="2023-27 – Sem – VII – Compiler Construction - Lab"),
+        ),
+        assignments=(
+            Assignment(id="theory-ca", course_id="theory", name="Theory CA"),
+            Assignment(id="lab-ca", course_id="lab", name="Lab Assignment 1"),
+        ),
+    )
+
+    answer = answer_from_query_plan(
+        QueryPlan(intent="assignments", course_query="Compiler Construction Lab"),
+        snapshot,
+    )
+
+    assert "Lab Assignment 1" in answer
+    assert "Theory CA" not in answer
+
+
 class StaticPlanner:
     def __init__(self, plan: QueryPlan) -> None:
         self.plan_value = plan
 
     async def plan(self, question: str, course_names: tuple[str, ...] = ()) -> QueryPlan:
         return self.plan_value
+
+
+@pytest.mark.asyncio
+async def test_answer_question_recovers_course_filter_when_planner_omits_it(tmp_path) -> None:
+    JsonSnapshotStore(tmp_path).save(
+        SyncSnapshot(
+            synced_at=datetime.now(UTC),
+            courses=(
+                Course(id="theory", name="2023-27 – Sem – VII – Compiler Construction"),
+                Course(id="lab", name="2023-27 – Sem – VII – Compiler Construction - Lab"),
+            ),
+            assignments=(
+                Assignment(id="theory-ca", course_id="theory", name="Theory CA"),
+                Assignment(id="lab-ca", course_id="lab", name="Lab Assignment 1"),
+            ),
+        )
+    )
+
+    answer = await answer_question(
+        "List all assignments for Compiler Construction Lab, sorted by due date.",
+        tmp_path,
+        planner=StaticPlanner(QueryPlan(intent="assignments")),
+    )
+
+    assert "Lab Assignment 1" in answer
+    assert "Theory CA" not in answer
 
 
 @pytest.mark.asyncio

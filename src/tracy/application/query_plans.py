@@ -2,13 +2,33 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime, timedelta
 
-from tracy.domain.entities import Assignment, SyncSnapshot
+from tracy.domain.entities import Assignment, Course, SyncSnapshot
 from tracy.domain.query import QueryPlan
 
+_COURSE_METADATA = {
+    "april",
+    "august",
+    "december",
+    "february",
+    "january",
+    "july",
+    "june",
+    "march",
+    "may",
+    "november",
+    "october",
+    "september",
+    "sem",
+    "semester",
+}
 
-def heuristic_query_plan(question: str) -> QueryPlan:
+
+def heuristic_query_plan(
+    question: str, course_names: tuple[str, ...] = ()
+) -> QueryPlan:
     """Provide an offline plan when the local planner is unavailable."""
 
     normalized = question.casefold()
@@ -45,10 +65,69 @@ def heuristic_query_plan(question: str) -> QueryPlan:
                 if "grouped by course" in normalized or "by course" in normalized
                 else None
             ),
+            course_query=infer_course_query(question, course_names),
         )
     if "enrolled" in normalized or "list my courses" in normalized:
         return QueryPlan(intent="courses")
     return QueryPlan(intent="documents")
+
+
+def _normalize_course_name(value: str) -> str:
+    return " ".join(re.sub(r"[^\w]+", " ", value.casefold()).split())
+
+
+def _course_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in _normalize_course_name(value).split()
+        if not token.isdigit()
+        and token not in _COURSE_METADATA
+        and not set(token).issubset(set("ivxlcdm"))
+    }
+
+
+def infer_course_query(question: str, course_names: tuple[str, ...]) -> str | None:
+    """Infer one course from words in a question without asking the LLM to guess."""
+
+    question_tokens = set(_normalize_course_name(question).split())
+    candidates = [
+        course_name
+        for course_name in course_names
+        if _course_tokens(course_name).issubset(question_tokens)
+    ]
+    if not candidates:
+        return None
+    most_specific = max(len(_course_tokens(course_name)) for course_name in candidates)
+    matches = [
+        course_name
+        for course_name in candidates
+        if len(_course_tokens(course_name)) == most_specific
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def resolve_course_id(course_query: str | None, courses: tuple[Course, ...]) -> str | None:
+    """Resolve a natural-language course reference to one canonical Moodle course."""
+
+    if not course_query:
+        return None
+    normalized_query = _normalize_course_name(course_query)
+    if not normalized_query:
+        return None
+
+    exact_matches = [
+        course for course in courses if _normalize_course_name(course.name) == normalized_query
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0].id
+
+    query_tokens = set(normalized_query.split())
+    candidates = [
+        course
+        for course in courses
+        if query_tokens.issubset(set(_normalize_course_name(course.name).split()))
+    ]
+    return candidates[0].id if len(candidates) == 1 else None
 
 
 def _format_assignment(
@@ -122,11 +201,13 @@ def answer_from_query_plan(
         if _assignment_matches_time(assignment, plan, current_date)
     ]
     if plan.course_query:
-        course_query = plan.course_query.casefold()
+        course_id = resolve_course_id(plan.course_query, snapshot.courses)
+        if course_id is None:
+            return f"I could not identify a unique Moodle course matching {plan.course_query!r}."
         assignments = [
             assignment
             for assignment in assignments
-            if course_query in course_names.get(assignment.course_id, "").casefold()
+            if assignment.course_id == course_id
         ]
     assignments.sort(key=lambda item: item.due_at or datetime.max.replace(tzinfo=UTC))
     if not assignments:

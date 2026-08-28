@@ -45,6 +45,7 @@ async def test_ollama_planner_returns_validated_query_plan() -> None:
     assert client.request is not None
     assert client.request[1]["format"] == "json"
     assert "Databases" in client.request[1]["messages"][1]["content"]
+    assert "course_query" in client.request[1]["messages"][0]["content"]
 
 
 @pytest.mark.asyncio

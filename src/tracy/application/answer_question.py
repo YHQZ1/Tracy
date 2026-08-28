@@ -1,10 +1,15 @@
 """Answer questions using structured Moodle data and indexed documents."""
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 from tracy.adapters.documents.index import JsonDocumentIndexStore
-from tracy.application.query_plans import answer_from_query_plan, heuristic_query_plan
+from tracy.application.query_plans import (
+    answer_from_query_plan,
+    heuristic_query_plan,
+    infer_course_query,
+)
 from tracy.config import get_settings
 from tracy.domain.entities import DocumentChunk, SyncSnapshot
 from tracy.domain.ports import AnswerComposer, QuestionPlanner
@@ -14,7 +19,10 @@ from tracy.persistence.json_store import JsonSnapshotStore
 def _answer_from_snapshot(
     question: str, snapshot: SyncSnapshot, *, today: date | None = None
 ) -> str:
-    answer = answer_from_query_plan(heuristic_query_plan(question), snapshot, today=today)
+    course_names = tuple(course.name for course in snapshot.courses)
+    answer = answer_from_query_plan(
+        heuristic_query_plan(question, course_names), snapshot, today=today
+    )
     return answer or (
         "The current Tracy slice can answer course-list and assignment-deadline questions. "
         "Run `tracy sync` first if the snapshot is out of date."
@@ -90,7 +98,8 @@ async def answer_question(
     active_planner = (
         planner if planner is not None else _default_planner() if composer is None else None
     )
-    plan = heuristic_query_plan(question)
+    course_names = tuple(course.name for course in snapshot.courses)
+    plan = heuristic_query_plan(question, course_names)
     if active_planner is not None:
         try:
             plan = await active_planner.plan(
@@ -98,6 +107,10 @@ async def answer_question(
             )
         except RuntimeError:
             pass
+    if plan.intent == "assignments" and plan.course_query is None:
+        inferred_course = infer_course_query(question, course_names)
+        if inferred_course is not None:
+            plan = replace(plan, course_query=inferred_course)
     structured_answer = answer_from_query_plan(plan, snapshot)
     if structured_answer is not None:
         return structured_answer

@@ -17,7 +17,8 @@ _SYSTEM_PROMPT = (
     "only when none applies. time_range must be all, this_week, next_7_days, upcoming, or "
     "overdue. direction must be all, upcoming, or past. fields may contain name, due_date, "
     "cutoff_date, and submission_status. group_by may be course or null. Return "
-    "JSON only."
+    "course_query must be null when no course is named; otherwise copy the closest matching "
+    "course name from the known Moodle courses. Return JSON only."
 )
 _VALID_INTENTS = {"assignments", "courses", "documents", "unsupported"}
 _VALID_TIME_RANGES = {"all", "this_week", "next_7_days", "upcoming", "overdue"}
@@ -46,6 +47,9 @@ def _validated_plan(payload: Any) -> QueryPlan:
     course_query = payload.get("course_query")
     if course_query is not None and not isinstance(course_query, str):
         raise RuntimeError("Ollama returned an invalid course filter.")
+    course_query = (
+        course_query.strip() or None if course_query is not None else None
+    )
     return QueryPlan(
         intent=intent,
         time_range=time_range,
