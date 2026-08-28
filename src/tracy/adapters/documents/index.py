@@ -68,12 +68,21 @@ def _chunks(text: str, limit: int = 1400) -> Iterable[str]:
     paragraphs = [" ".join(part.split()) for part in text.splitlines() if part.strip()]
     current = ""
     for paragraph in paragraphs:
-        if len(current) + len(paragraph) + 1 <= limit:
-            current = f"{current} {paragraph}".strip()
-            continue
-        if current:
-            yield current
-        current = paragraph[:limit]
+        remaining = paragraph
+        while remaining:
+            available = limit - len(current) - (1 if current else 0)
+            if len(remaining) <= available:
+                current = f"{current} {remaining}".strip()
+                break
+            if current:
+                yield current
+                current = ""
+                continue
+            split_at = remaining.rfind(" ", 0, limit + 1)
+            if split_at <= 0:
+                split_at = limit
+            yield remaining[:split_at]
+            remaining = remaining[split_at:].lstrip()
     if current:
         yield current
 
@@ -176,6 +185,8 @@ class DocumentIndex:
             course_match_count = len(query_tokens & course_tokens)
             if course_scoped and course_match_count < 2:
                 continue
+            if course_scoped and "lab" not in query_tokens and "lab" in course_tokens:
+                continue
             text_tokens = set(_tokens(chunk.text))
             score = (
                 5 * len(query_tokens & name_tokens)
@@ -189,6 +200,9 @@ class DocumentIndex:
             if score:
                 ranked.append((score, chunk))
         ranked.sort(key=lambda item: (-item[0], item[1].document_name, item[1].page or 0))
+        if "syllabus" in query_tokens and ranked:
+            best_document_id = ranked[0][1].document_id
+            return [chunk for chunk in self.chunks if chunk.document_id == best_document_id]
         return [chunk for _, chunk in ranked[:limit]]
 
 

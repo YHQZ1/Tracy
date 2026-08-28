@@ -29,3 +29,5 @@ async def test_ollama_composer_sends_grounding_context_to_local_chat_api() -> No
 
     assert answer == "Grounded local answer [1]"
     assert client.request is not None
+    system_prompt = client.request[1]["messages"][0]["content"]
+    assert "include every unit/topic present" in system_prompt

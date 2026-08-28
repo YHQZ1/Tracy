@@ -130,6 +130,76 @@ async def test_document_search_prioritizes_requested_unit_and_syllabus(tmp_path:
     assert "Syllabus_1_.pdf" not in syllabus_answer
 
 
+def test_syllabus_search_does_not_mix_the_lab_course(tmp_path: Path) -> None:
+    index = DocumentIndex(
+        (
+            DocumentChunk(
+                id="theory-1",
+                document_id="theory",
+                course_id="1",
+                course_name="Compiler Construction",
+                document_name="TE7751_Compiler_Construction.pdf",
+                source_url="https://moodle.example/theory",
+                text="Course Outline: Unit 1 Lexical Analysis",
+                page=1,
+            ),
+            DocumentChunk(
+                id="theory-2",
+                document_id="theory",
+                course_id="1",
+                course_name="Compiler Construction",
+                document_name="TE7751_Compiler_Construction.pdf",
+                source_url="https://moodle.example/theory",
+                text="Unit 7 Code Optimization and Advanced Compilation Techniques",
+                page=2,
+            ),
+            DocumentChunk(
+                id="lab-1",
+                document_id="lab",
+                course_id="2",
+                course_name="Compiler Construction Lab",
+                document_name="T7478_Compiler_Construction_Lab.pdf",
+                source_url="https://moodle.example/lab",
+                text="Course Outline: LEX and YACC exercises",
+                page=1,
+            ),
+        )
+    )
+
+    results = index.search("what is the syllabus of compiler construction?")
+
+    assert [chunk.id for chunk in results] == ["theory-1", "theory-2"]
+
+
+def test_document_index_preserves_text_after_chunk_limit(tmp_path: Path) -> None:
+    document_path = tmp_path / "long-syllabus.txt"
+    document_path.write_text(
+        "Course Outline: " + ("Lexical Analysis topic. " * 100) + "Unit 7 Code Optimization",
+        encoding="utf-8",
+    )
+    document = Document(
+        id="long-syllabus",
+        course_id="1",
+        name="Compiler Syllabus",
+        source_url="https://moodle.example/long-syllabus",
+        content_hash="hash",
+        local_path=document_path,
+        content_type="text/plain",
+    )
+
+    index = build_document_index(
+        SyncSnapshot(
+            synced_at=datetime.now(UTC),
+            courses=(Course(id="1", name="Compiler Construction"),),
+            documents=(document,),
+        ),
+        tmp_path,
+    )
+
+    indexed_text = " ".join(chunk.text for chunk in index.chunks)
+    assert "Unit 7 Code Optimization" in indexed_text
+
+
 @pytest.mark.asyncio
 async def test_document_question_uses_composer_with_cited_context(tmp_path: Path) -> None:
     JsonSnapshotStore(tmp_path).save(
