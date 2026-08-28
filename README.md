@@ -27,9 +27,13 @@ The first interface is intentionally a CLI:
 
 ```bash
 TRACY_MOODLE_BASE_URL=https://your-moodle.example.com tracy sync
+tracy index
 tracy ask "What assignments are due this week?"
 tracy reminders
 ```
+
+Run `tracy index` after syncing to extract and search downloaded course documents.
+Document answers include the course, page or slide, snippet, and Moodle source URL.
 
 On the first sync, Tracy opens a browser window. Sign in to Moodle there and
 press Enter in the terminal. Tracy never asks for or stores your Moodle password.

@@ -6,6 +6,7 @@ from rich.console import Console
 from tracy import __version__
 from tracy.application.answer_question import answer_question
 from tracy.application.create_reminders import create_reminders
+from tracy.application.index_documents import index_documents
 from tracy.application.sync_moodle import sync_moodle
 from tracy.config import get_settings
 
@@ -49,6 +50,18 @@ def ask(question: str) -> None:
         console.print(f"[yellow]{error}[/yellow]")
     else:
         console.print(answer)
+
+
+@app.command(name="index")
+def index() -> None:
+    """Extract and index downloaded Moodle documents."""
+
+    try:
+        document_index = index_documents(get_settings().data_dir)
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        console.print(f"[yellow]{error}[/yellow]")
+    else:
+        console.print(f"Indexed {len(document_index.chunks)} document chunks.")
 
 
 @app.command()

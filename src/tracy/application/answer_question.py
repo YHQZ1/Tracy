@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from tracy.adapters.documents.index import JsonDocumentIndexStore
 from tracy.domain.entities import Assignment, SyncSnapshot
 from tracy.persistence.json_store import JsonSnapshotStore
 
@@ -72,4 +73,21 @@ async def answer_question(question: str, data_dir: Path) -> str:
     """Answer supported structured questions from the local snapshot."""
 
     snapshot = JsonSnapshotStore(data_dir).load()
-    return _answer_from_snapshot(question, snapshot)
+    answer = _answer_from_snapshot(question, snapshot)
+    if not answer.startswith("The current Tracy slice"):
+        return answer
+
+    try:
+        results = JsonDocumentIndexStore(data_dir).load().search(question)
+    except FileNotFoundError as error:
+        return str(error)
+    if not results:
+        return "I could not find relevant documents in the latest document index."
+
+    lines = ["Relevant documents:"]
+    for chunk in results:
+        location = f", page/slide {chunk.page}" if chunk.page else ""
+        lines.append(f"- {chunk.document_name} — {chunk.course_name}{location}")
+        lines.append(f"  {chunk.text[:320]}")
+        lines.append(f"  Source: {chunk.source_url}")
+    return "\n".join(lines)

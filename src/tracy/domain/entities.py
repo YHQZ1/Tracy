@@ -63,6 +63,18 @@ class Document:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentChunk:
+    id: str
+    document_id: str
+    course_id: str
+    course_name: str
+    document_name: str
+    source_url: str
+    text: str
+    page: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SyncSnapshot:
     synced_at: datetime
     courses: tuple[Course, ...] = ()
