@@ -95,6 +95,16 @@ async def test_document_search_prioritizes_requested_unit_and_syllabus(tmp_path:
                     text="Course Outline: Learning Objectives, Hours, Evaluation, and Pedagogy",
                     page=1,
                 ),
+                DocumentChunk(
+                    id="hci-syllabus",
+                    document_id="hci-syllabus",
+                    course_id="2",
+                    course_name="Human Computer Interface",
+                    document_name="Syllabus_1_.pdf",
+                    source_url="https://moodle.example/hci-syllabus",
+                    text="Course Outline: Learning Objectives, Hours, Evaluation, and Pedagogy",
+                    page=1,
+                ),
             )
         )
     )
@@ -106,3 +116,4 @@ async def test_document_search_prioritizes_requested_unit_and_syllabus(tmp_path:
 
     assert "Compiler_Construction_Unit_II.pptx" in unit_answer.splitlines()[1]
     assert "TE7751_Compiler_Construction.pdf" in syllabus_answer.splitlines()[1]
+    assert "Syllabus_1_.pdf" not in syllabus_answer

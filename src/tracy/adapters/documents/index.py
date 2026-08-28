@@ -162,10 +162,20 @@ class DocumentIndex:
         if not query_tokens:
             return []
 
+        # Once a query names a course with multiple terms, avoid matching
+        # generic document text from unrelated courses.
+        course_scoped = any(
+            len(query_tokens & set(_tokens(chunk.course_name))) >= 2
+            for chunk in self.chunks
+        )
+
         ranked: list[tuple[int, DocumentChunk]] = []
         for chunk in self.chunks:
             name_tokens = set(_tokens(chunk.document_name))
             course_tokens = set(_tokens(chunk.course_name))
+            course_match_count = len(query_tokens & course_tokens)
+            if course_scoped and course_match_count < 2:
+                continue
             text_tokens = set(_tokens(chunk.text))
             score = (
                 5 * len(query_tokens & name_tokens)
