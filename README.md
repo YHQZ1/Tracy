@@ -30,6 +30,7 @@ TRACY_MOODLE_BASE_URL=https://your-moodle.example.com tracy sync
 tracy setup
 tracy index
 tracy ask "What assignments are due this week?"
+tracy ask "What is my attendance in DevOps Lab?"
 tracy reminders
 ```
 
@@ -40,6 +41,9 @@ extract and search downloaded course documents.
 
 Tracy uses a local Ollama model for query planning and synthesized document answers. The planner translates natural language into a validated query plan; Tracy executes facts against the local snapshot. Install Ollama, run `ollama pull gemma3:4b`, and keep Ollama running. Configure `TRACY_OLLAMA_BASE_URL` and `TRACY_OLLAMA_MODEL` in `.env` if needed. If Ollama is unavailable, Tracy falls back to deterministic query heuristics and citation-rich retrieval results.
 Document answers include the course, page or slide, snippet, and Moodle source URL.
+Attendance answers currently use the consolidated Moodle report and include each
+course's total, marked, and attended sessions plus percentage. Individual session
+history is a later slice.
 
 On the first sync, Tracy opens a browser window. Sign in to Moodle there and
 press Enter in the terminal. Tracy never asks for or stores your Moodle password.

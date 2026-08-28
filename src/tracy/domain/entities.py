@@ -75,12 +75,24 @@ class DocumentChunk:
 
 
 @dataclass(frozen=True, slots=True)
+class AttendanceSummary:
+    course_id: str
+    course_name: str
+    total_sessions: int
+    marked_sessions: int
+    attended_sessions: int
+    percentage: float | None = None
+    source_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SyncSnapshot:
     synced_at: datetime
     courses: tuple[Course, ...] = ()
     sections: tuple[CourseSection, ...] = ()
     modules: tuple[CourseModule, ...] = ()
     assignments: tuple[Assignment, ...] = ()
+    attendance: tuple[AttendanceSummary, ...] = ()
     documents: tuple[Document, ...] = ()
 
 

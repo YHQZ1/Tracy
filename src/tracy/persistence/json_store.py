@@ -10,6 +10,7 @@ from typing import Any
 
 from tracy.domain.entities import (
     Assignment,
+    AttendanceSummary,
     Course,
     CourseModule,
     CourseSection,
@@ -70,5 +71,8 @@ class JsonSnapshotStore:
             sections=tuple(CourseSection(**item) for item in payload.get("sections", [])),
             modules=tuple(CourseModule(**item) for item in payload.get("modules", [])),
             assignments=tuple(Assignment(**item) for item in payload.get("assignments", [])),
+            attendance=tuple(
+                AttendanceSummary(**item) for item in payload.get("attendance", [])
+            ),
             documents=tuple(Document(**item) for item in payload.get("documents", [])),
         )

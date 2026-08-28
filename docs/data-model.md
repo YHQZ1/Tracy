@@ -12,6 +12,7 @@ The first canonical records are:
 - `Assignment` — an activity with submission and due-date semantics.
 - `Grade` — a user-specific grade or course result.
 - `AttendanceRecord` — a user-specific attendance observation.
+- `AttendanceSummary` — a user-specific per-course total, marked, attended, and percentage summary.
 - `Announcement` — a forum or announcement item.
 - `Document` — an attached file and its Moodle source metadata.
 - `DocumentChunk` — extracted text with document and page provenance.

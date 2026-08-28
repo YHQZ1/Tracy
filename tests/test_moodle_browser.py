@@ -11,8 +11,9 @@ from tracy.adapters.moodle.browser import (
     MoodleBrowserSource,
     _service_data,
     parse_assignment_html,
+    parse_attendance_report_html,
 )
-from tracy.domain.entities import CourseModule
+from tracy.domain.entities import Course, CourseModule
 
 
 def test_service_data_decodes_moodle_nested_json() -> None:
@@ -157,7 +158,8 @@ async def test_authentication_check_retries_navigation_context_reset() -> None:
             self.attempts += 1
             if self.attempts == 1:
                 raise RuntimeError(
-                    "Page.evaluate: Execution context was destroyed, most likely because of a navigation"
+                    "Page.evaluate: Execution context was destroyed, most likely "
+                    "because of a navigation"
                 )
             return 42
 
@@ -274,3 +276,69 @@ def test_assignment_dates_are_timezone_aware() -> None:
 
     assert assignment.due_at is not None
     assert assignment.due_at.utcoffset() is not None
+
+
+def test_attendance_report_extracts_course_totals_and_percentage() -> None:
+    html = """
+    <table>
+      <thead><tr>
+        <th>Course Name</th><th>Total Sessions</th><th>Marked Sessions</th>
+        <th>Attended Sessions</th><th>Percentage</th>
+      </tr></thead>
+      <tbody><tr>
+        <td>Big Data Analytics 2026 June</td><td>23</td><td>23</td>
+        <td>22</td><td>95.65%</td>
+      </tr></tbody>
+    </table>
+    """
+
+    summaries = parse_attendance_report_html(
+        html,
+        course_ids={"big data analytics 2026 june": "2803"},
+        source_url="https://moodle.example/attendance-report/Student-Attendance/index.php",
+    )
+
+    assert len(summaries) == 1
+    assert summaries[0].course_id == "2803"
+    assert summaries[0].course_name == "Big Data Analytics 2026 June"
+    assert summaries[0].total_sessions == 23
+    assert summaries[0].marked_sessions == 23
+    assert summaries[0].attended_sessions == 22
+    assert summaries[0].percentage == 95.65
+
+
+@pytest.mark.asyncio
+async def test_attendance_report_fetch_uses_consolidated_report_url() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.url: str | None = None
+
+        async def goto(self, url: str, wait_until: str) -> None:
+            self.url = url
+
+        async def content(self) -> str:
+            return """
+            <table><tr>
+              <th>Course Name</th><th>Total Sessions</th><th>Marked Sessions</th>
+              <th>Attended Sessions</th><th>Percentage</th>
+            </tr><tr>
+              <td>DevOps Lab</td><td>10</td><td>10</td><td>8</td><td>80%</td>
+            </tr></table>
+            """
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=Path("data/browser-profile"),
+        data_dir=Path("data"),
+    )
+    page = FakePage()
+
+    summaries = await source._fetch_attendance_report(
+        page, [Course(id="1", name="DevOps Lab")], RuntimeError
+    )
+
+    assert page.url == (
+        "https://moodle.example/attendance-report/Student-Attendance/index.php"
+    )
+    assert summaries[0].course_id == "1"
+    assert summaries[0].attended_sessions == 8

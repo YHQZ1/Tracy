@@ -33,6 +33,11 @@ def heuristic_query_plan(
     """Provide an offline plan when the local planner is unavailable."""
 
     normalized = question.casefold()
+    if re.search(r"\b(?:attendance|attended|present)\b", normalized):
+        return QueryPlan(
+            intent="attendance",
+            course_query=infer_course_query(question, course_names),
+        )
     if "assignment" in normalized or "deadline" in normalized or "due" in normalized:
         if "next seven" in normalized or "next 7" in normalized:
             time_range = "next_7_days"
@@ -256,6 +261,33 @@ def answer_from_query_plan(
             return "I could not find any courses in the latest Moodle snapshot."
         lines = [f"You are enrolled in {len(snapshot.courses)} courses:"]
         lines.extend(f"- {course.name}" for course in snapshot.courses)
+        return "\n".join(lines)
+    if plan.intent == "attendance":
+        summaries = list(snapshot.attendance)
+        if plan.course_query:
+            course_id = resolve_course_id(plan.course_query, snapshot.courses)
+            if course_id is None:
+                return (
+                    "I could not identify a unique Moodle course matching "
+                    f"{plan.course_query!r}."
+                )
+            summaries = [item for item in summaries if item.course_id == course_id]
+        if not summaries:
+            return "I could not find attendance data in the latest Moodle snapshot."
+        lines = ["Attendance:"]
+        for summary in summaries:
+            percentage = (
+                f"{summary.percentage:.2f}%"
+                if summary.percentage is not None
+                else "percentage unavailable"
+            )
+            lines.append(
+                f"- {summary.course_name} — {summary.attended_sessions}/"
+                f"{summary.total_sessions} attended, "
+                f"{summary.marked_sessions} marked ({percentage})"
+            )
+            if summary.source_url:
+                lines.append(f"  source: {summary.source_url}")
         return "\n".join(lines)
     if plan.intent != "assignments":
         return None

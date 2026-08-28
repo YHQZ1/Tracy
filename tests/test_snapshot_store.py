@@ -4,7 +4,7 @@ import pytest
 
 from tracy.application.answer_question import _answer_from_snapshot, answer_question
 from tracy.application.query_plans import answer_from_query_plan
-from tracy.domain.entities import Assignment, Course, SyncSnapshot
+from tracy.domain.entities import Assignment, AttendanceSummary, Course, SyncSnapshot
 from tracy.domain.query import QueryPlan
 from tracy.persistence.json_store import JsonSnapshotStore
 
@@ -20,6 +20,17 @@ def test_snapshot_round_trip_and_structured_answers(tmp_path) -> None:
                 name="CA",
                 due_at=datetime(2026, 8, 25, tzinfo=UTC),
                 source_url="https://moodle.example/assign/2",
+            ),
+        ),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="Databases",
+                total_sessions=23,
+                marked_sessions=23,
+                attended_sessions=22,
+                percentage=95.65,
+                source_url="https://moodle.example/attendance-report",
             ),
         ),
     )
@@ -89,6 +100,65 @@ def test_course_filter_ignores_punctuation_and_selects_one_course() -> None:
 
     assert "Lab Assignment 1" in answer
     assert "Theory CA" not in answer
+
+
+def test_attendance_answer_is_course_scoped_and_deterministic() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(
+            Course(id="1", name="Databases"),
+            Course(id="2", name="DevOps Lab"),
+        ),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="Databases",
+                total_sessions=20,
+                marked_sessions=20,
+                attended_sessions=18,
+                percentage=90.0,
+            ),
+            AttendanceSummary(
+                course_id="2",
+                course_name="DevOps Lab",
+                total_sessions=12,
+                marked_sessions=12,
+                attended_sessions=9,
+                percentage=75.0,
+            ),
+        ),
+    )
+
+    answer = answer_from_query_plan(
+        QueryPlan(intent="attendance", course_query="DevOps Lab"), snapshot
+    )
+
+    assert answer == (
+        "Attendance:\n"
+        "- DevOps Lab — 9/12 attended, 12 marked (75.00%)"
+    )
+
+
+def test_offline_attendance_question_infers_course() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(Course(id="1", name="DevOps Lab"),),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="DevOps Lab",
+                total_sessions=12,
+                marked_sessions=12,
+                attended_sessions=9,
+                percentage=75.0,
+            ),
+        ),
+    )
+
+    answer = _answer_from_snapshot("What is my attendance in DevOps Lab?", snapshot)
+
+    assert "DevOps Lab" in answer
+    assert "9/12" in answer
 
 
 class StaticPlanner:

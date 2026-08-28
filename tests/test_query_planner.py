@@ -1,6 +1,7 @@
 import pytest
 
 from tracy.adapters.llm.planner import OllamaQuestionPlanner
+from tracy.application.query_plans import heuristic_query_plan
 
 
 class FakeResponse:
@@ -54,3 +55,27 @@ async def test_ollama_planner_rejects_unknown_intent() -> None:
 
     with pytest.raises(RuntimeError, match="unknown query intent"):
         await OllamaQuestionPlanner(client=client).plan("Do something")
+
+
+@pytest.mark.asyncio
+async def test_ollama_planner_accepts_attendance_intent() -> None:
+    client = FakeClient(
+        FakeResponse(
+            '{"intent":"attendance","time_range":"all",'
+            '"direction":"all","fields":[],"group_by":null,'
+            '"course_query":"DevOps Lab"}'
+        )
+    )
+
+    plan = await OllamaQuestionPlanner(client=client).plan(
+        "What is my attendance in DevOps Lab?"
+    )
+
+    assert plan.intent == "attendance"
+    assert plan.course_query == "DevOps Lab"
+
+
+def test_heuristic_planner_does_not_mistake_presentations_for_attendance() -> None:
+    plan = heuristic_query_plan("Show the presentations for Compiler Construction")
+
+    assert plan.intent == "documents"

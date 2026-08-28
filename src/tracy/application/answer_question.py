@@ -112,7 +112,7 @@ async def answer_question(
             )
         except RuntimeError:
             pass
-    if plan.intent == "assignments" and plan.course_query is None:
+    if plan.intent in {"assignments", "attendance"} and plan.course_query is None:
         inferred_course = infer_course_query(question, course_names)
         if inferred_course is not None:
             plan = replace(plan, course_query=inferred_course)

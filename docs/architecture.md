@@ -59,11 +59,13 @@ instructions, and attached documents.
 Student context such as PRN, program, division, year, semester, and per-lab
 batch is collected once through `tracy setup` and stored locally. It is not
 conversation memory. Future synchronization will attach Moodle group or batch
-metadata to activities and attendance records, then apply this context through
-deterministic filters before an LLM sees any answer data. The current sync
-already maps assignment modules to Moodle section titles, so labels such as
-`Batch L1`, `Batch L2`, and `A2` can scope assignment answers. A matching
-batch-specific activity wins over a general activity with the same name.
+metadata to activities and individual attendance records, then apply this context
+through deterministic filters before an LLM sees any answer data. The current
+sync already maps assignment modules to Moodle section titles, so labels such as
+`Batch L1`, `Batch L2`, and `A2` can scope assignment answers. It also reads the
+consolidated student attendance report into typed per-course summaries. A matching
+batch-specific activity wins over a general activity with the same name. Individual
+attendance session history remains a later slice.
 
 ## Initial constraints
 

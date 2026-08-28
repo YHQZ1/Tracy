@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from tracy.domain.entities import (
     Assignment,
+    AttendanceSummary,
     Course,
     CourseModule,
     CourseSection,
@@ -207,7 +208,6 @@ def parse_assignment_html(
     parser = MoodleHtmlParser()
     parser.feed(html)
     dates = _clean_text(" ".join(parser.blocks["dates"]))
-    submission = parser.blocks["submission"]
     assignment = Assignment(
         id=assignment_id,
         course_id=course_id,
@@ -232,6 +232,68 @@ def parse_assignment_html(
     )
     file_urls = [href for href in parser.submission_links if "pluginfile.php" in href]
     return assignment, file_urls
+
+
+def _parse_integer(value: str) -> int | None:
+    match = re.search(r"\d[\d,]*", value)
+    return int(match.group(0).replace(",", "")) if match else None
+
+
+def _parse_percentage(value: str) -> float | None:
+    match = re.search(r"\d+(?:\.\d+)?", value)
+    return float(match.group(0)) if match else None
+
+
+def parse_attendance_report_html(
+    html: str,
+    *,
+    course_ids: dict[str, str],
+    source_url: str,
+) -> list[AttendanceSummary]:
+    """Parse the university attendance report table into course summaries."""
+
+    parser = MoodleHtmlParser()
+    parser.feed(html)
+    required_headers = {
+        "course name": "course_name",
+        "total sessions": "total_sessions",
+        "marked sessions": "marked_sessions",
+        "attended sessions": "attended_sessions",
+        "percentage": "percentage",
+    }
+    header_index: dict[str, int] | None = None
+    data_start = 0
+    for index, row in enumerate(parser.rows):
+        normalized = {_clean_text(cell).casefold(): position for position, cell in enumerate(row)}
+        if required_headers.keys() <= normalized.keys():
+            header_index = {field: normalized[label] for label, field in required_headers.items()}
+            data_start = index + 1
+            break
+    if header_index is None:
+        return []
+
+    summaries: list[AttendanceSummary] = []
+    for row in parser.rows[data_start:]:
+        if len(row) <= max(header_index.values()):
+            continue
+        course_name = _clean_text(row[header_index["course_name"]])
+        total_sessions = _parse_integer(row[header_index["total_sessions"]])
+        marked_sessions = _parse_integer(row[header_index["marked_sessions"]])
+        attended_sessions = _parse_integer(row[header_index["attended_sessions"]])
+        if not course_name or None in (total_sessions, marked_sessions, attended_sessions):
+            continue
+        summaries.append(
+            AttendanceSummary(
+                course_id=course_ids.get(course_name.casefold(), ""),
+                course_name=course_name,
+                total_sessions=total_sessions,
+                marked_sessions=marked_sessions,
+                attended_sessions=attended_sessions,
+                percentage=_parse_percentage(row[header_index["percentage"]]),
+                source_url=source_url,
+            )
+        )
+    return summaries
 
 
 class MoodleBrowserSource:
@@ -280,6 +342,9 @@ class MoodleBrowserSource:
                 sections: list[CourseSection] = []
                 modules: list[CourseModule] = []
                 assignments: list[Assignment] = []
+                attendance = await self._fetch_attendance_report(
+                    page, courses, PlaywrightTimeoutError
+                )
                 documents: list[Document] = []
 
                 for course in courses:
@@ -317,6 +382,7 @@ class MoodleBrowserSource:
                     sections=tuple(sections),
                     modules=tuple(modules),
                     assignments=tuple(assignments),
+                    attendance=tuple(attendance),
                     documents=tuple(documents),
                 )
             finally:
@@ -408,7 +474,7 @@ class MoodleBrowserSource:
         try:
             await page.goto(url, wait_until="domcontentloaded")
             await asyncio.wait_for(target_found.wait(), timeout=self.timeout_ms / 1000)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         except timeout_error as error:
             raise MoodleConnectionError(
@@ -490,8 +556,10 @@ class MoodleBrowserSource:
     ) -> tuple[Assignment, list[str]]:
         try:
             await page.goto(module.source_url, wait_until="domcontentloaded")
-        except timeout_error:
-            raise MoodleConnectionError(f"Timed out loading assignment {module.id}.")
+        except timeout_error as error:
+            raise MoodleConnectionError(
+                f"Timed out loading assignment {module.id}."
+            ) from error
         html = await page.content()
         return parse_assignment_html(
             html,
@@ -500,6 +568,23 @@ class MoodleBrowserSource:
             source_url=module.source_url or "",
             fallback_name=module.name,
             timezone=self.timezone,
+        )
+
+    async def _fetch_attendance_report(
+        self, page: Any, courses: list[Course], timeout_error: Any
+    ) -> list[AttendanceSummary]:
+        """Fetch the university report that summarizes attendance by course."""
+
+        report_url = f"{self.base_url}/attendance-report/Student-Attendance/index.php"
+        try:
+            await page.goto(report_url, wait_until="domcontentloaded")
+        except timeout_error:
+            return []
+        course_ids = {
+            _clean_text(course.name).casefold(): course.id for course in courses
+        }
+        return parse_attendance_report_html(
+            await page.content(), course_ids=course_ids, source_url=report_url
         )
 
     async def _fetch_resource_document(

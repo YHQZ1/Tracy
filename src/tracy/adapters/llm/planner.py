@@ -13,14 +13,15 @@ _SYSTEM_PROMPT = (
     "You are Tracy's query planner. Translate a student's Moodle question into exactly one "
     "JSON object. Never answer the question and never invent Moodle facts. Use intent "
     "assignments for assignment/deadline/submission questions, courses for enrollment/list "
-    "questions, documents for syllabus/material/announcement questions, and unsupported "
+    "questions, attendance for attendance questions, documents for "
+    "syllabus/material/announcement questions, and unsupported "
     "only when none applies. time_range must be all, this_week, next_7_days, upcoming, or "
     "overdue. direction must be all, upcoming, or past. fields may contain name, due_date, "
     "cutoff_date, and submission_status. group_by may be course or null. Return "
     "course_query must be null when no course is named; otherwise copy the closest matching "
     "course name from the known Moodle courses. Return JSON only."
 )
-_VALID_INTENTS = {"assignments", "courses", "documents", "unsupported"}
+_VALID_INTENTS = {"assignments", "courses", "documents", "attendance", "unsupported"}
 _VALID_TIME_RANGES = {"all", "this_week", "next_7_days", "upcoming", "overdue"}
 _VALID_DIRECTIONS = {"all", "upcoming", "past"}
 _VALID_FIELDS = {"name", "due_date", "cutoff_date", "submission_status"}

@@ -41,7 +41,8 @@ def sync() -> None:
     else:
         console.print(
             f"Synced {len(snapshot.courses)} courses, {len(snapshot.assignments)} assignments, "
-            f"and {len(snapshot.documents)} documents."
+            f"{len(snapshot.documents)} documents, and "
+            f"{len(snapshot.attendance)} attendance summaries."
         )
 
 
