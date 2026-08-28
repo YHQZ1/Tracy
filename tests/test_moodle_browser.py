@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 from datetime import datetime
@@ -74,6 +75,65 @@ async def test_service_page_reads_response_before_navigation() -> None:
         base_url="https://moodle.example",
         profile_dir=Path("data/browser-profile"),
         data_dir=Path("data"),
+    )
+
+    assert await source._service_page(
+        FakePage(),
+        "https://moodle.example/my/",
+        "core_course_get_enrolled_courses_by_timeline_classification",
+        RuntimeError,
+    ) == {"courses": [{"id": 42}]}
+
+
+@pytest.mark.asyncio
+async def test_service_page_waits_for_ajax_after_domcontentloaded() -> None:
+    class FakeResponse:
+        url = "https://moodle.example/lib/ajax/service.php"
+
+        async def json(self) -> object:
+            return [{"error": False, "data": '{"courses": [{"id": 42}]}'}]
+
+    class FakeRoute:
+        def __init__(self) -> None:
+            self.response = FakeResponse()
+
+        async def fetch(self) -> FakeResponse:
+            return self.response
+
+        async def fulfill(self, *, response: FakeResponse) -> None:
+            return None
+
+        async def continue_(self) -> None:
+            return None
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.routes: list[tuple[str, object]] = []
+
+        async def route(self, pattern: str, callback: object) -> None:
+            self.routes.append((pattern, callback))
+
+        async def unroute(self, pattern: str, callback: object) -> None:
+            self.routes.remove((pattern, callback))
+
+        async def goto(self, url: str, wait_until: str) -> None:
+            async def emit_response() -> None:
+                await asyncio.sleep(0)
+                if self.routes:
+                    result = self.routes[0][1](FakeRoute())  # type: ignore[operator]
+                    if inspect.isawaitable(result):
+                        await result
+
+            asyncio.create_task(emit_response())
+
+        async def wait_for_timeout(self, milliseconds: int) -> None:
+            return None
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=Path("data/browser-profile"),
+        data_dir=Path("data"),
+        timeout_ms=100,
     )
 
     assert await source._service_page(

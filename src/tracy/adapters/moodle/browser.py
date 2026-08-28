@@ -363,6 +363,7 @@ class MoodleBrowserSource:
     async def _service_page(self, page: Any, url: str, method: str, timeout_error: Any) -> Any:
         responses: list[tuple[str, Any]] = []
         route_pattern = "**/lib/ajax/service.php*"
+        target_found = asyncio.Event()
 
         async def capture_route(route: Any) -> None:
             try:
@@ -374,20 +375,26 @@ class MoodleBrowserSource:
             try:
                 # Read the body before fulfilling the route. This keeps the
                 # response independent of any navigation that follows it.
-                responses.append((response.url, _service_data(await response.json())))
+                data = _service_data(await response.json())
             except (json.JSONDecodeError, MoodleConnectionError):
-                pass
+                data = None
             except Exception:
                 # Moodle pages issue several background service requests. A
                 # malformed or disappearing response is not the target request.
-                pass
+                data = None
             await route.fulfill(response=response)
+            if data is not None:
+                responses.append((response.url, data))
+                if method in unquote(response.url) or self._service_result_matches(method, data):
+                    target_found.set()
 
         await page.route(route_pattern, capture_route)
 
         try:
             await page.goto(url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(750)
+            await asyncio.wait_for(target_found.wait(), timeout=self.timeout_ms / 1000)
+        except asyncio.TimeoutError:
+            pass
         except timeout_error as error:
             raise MoodleConnectionError(
                 f"Moodle did not return the expected AJAX function {method} while loading {url}."
