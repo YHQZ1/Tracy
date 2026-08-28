@@ -28,7 +28,7 @@ def _print_shell_help() -> None:
     console.print("  /sync       Synchronize data from Moodle")
     console.print("  /index      Rebuild the document index")
     console.print("  /setup      Update your local student context")
-    console.print("  /reminders  Show or create reminders")
+    console.print("  /reminders  Show overdue and near-term assignment reminders")
     console.print("  /help       Show this help")
     console.print("  /exit       Leave the Tracy shell")
 
@@ -158,12 +158,17 @@ def index() -> None:
 
 @app.command()
 def reminders() -> None:
-    """Create or inspect reminders."""
+    """Show overdue and near-term assignment reminders."""
 
+    settings = get_settings()
     try:
-        asyncio.run(create_reminders())
-    except NotImplementedError as error:
+        report = asyncio.run(
+            create_reminders(settings.data_dir, timezone=settings.timezone)
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
         console.print(f"[yellow]{error}[/yellow]")
+    else:
+        console.print(report)
 
 
 def main() -> None:
