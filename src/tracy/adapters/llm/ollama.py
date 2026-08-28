@@ -13,8 +13,8 @@ _SYSTEM_PROMPT = (
     "an answer, say that clearly instead of guessing. Cite factual claims with the source "
     "markers [1], [2], etc. If the question asks for a syllabus or course outline, include "
     "every unit/topic present in the context and keep theory and lab courses separate. Keep "
-    "the answer concise and include a short Sources list when "
-    "useful."
+    "the answer concise. Use the numeric markers exactly as provided. Do not add a "
+    "Sources section; Tracy appends clickable source links."
 )
 
 

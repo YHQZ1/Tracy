@@ -79,14 +79,34 @@ def _document_context(results: list[DocumentChunk]) -> str:
     return "\n\n".join(context)
 
 
+def _source_appendix(results: list[DocumentChunk]) -> str:
+    grouped: dict[tuple[str, str, str], list[tuple[int, int | None]]] = {}
+    for index, chunk in enumerate(results, 1):
+        key = (chunk.source_url, chunk.document_name, chunk.course_name)
+        grouped.setdefault(key, []).append((index, chunk.page))
+
+    lines = ["Sources:"]
+    for (source_url, document_name, course_name), references in grouped.items():
+        citation_numbers = ", ".join(f"[{index}]" for index, _ in references)
+        pages = sorted({page for _, page in references if page is not None})
+        location = f" (pages/slides {', '.join(map(str, pages))})" if pages else ""
+        label = f"{document_name} — {course_name}{location}"
+        source = f"[link={source_url}]{label}[/link]" if source_url else label
+        lines.append(f"- {citation_numbers} {source}")
+    return "\n".join(lines)
+
+
+def _with_sources(answer: str, results: list[DocumentChunk]) -> str:
+    return f"{answer.rstrip()}\n\n{_source_appendix(results)}"
+
+
 def _retrieval_answer(results: list[DocumentChunk]) -> str:
     lines = ["Relevant documents:"]
     for chunk in results:
         location = f", page/slide {chunk.page}" if chunk.page else ""
         lines.append(f"- {chunk.document_name} — {chunk.course_name}{location}")
         lines.append(f"  {chunk.text[:320]}")
-        lines.append(f"  Source: {chunk.source_url}")
-    return "\n".join(lines)
+    return _with_sources("\n".join(lines), results)
 
 
 def _default_composer() -> AnswerComposer:
@@ -115,7 +135,9 @@ async def answer_question(
 
     if composer is None:
         try:
-            return await _default_composer().compose(question, _document_context(results))
+            answer = await _default_composer().compose(question, _document_context(results))
         except RuntimeError:
             return _retrieval_answer(results)
-    return await composer.compose(question, _document_context(results))
+    else:
+        answer = await composer.compose(question, _document_context(results))
+    return _with_sources(answer, results)

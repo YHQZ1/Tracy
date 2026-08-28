@@ -221,6 +221,16 @@ async def test_document_question_uses_composer_with_cited_context(tmp_path: Path
                     text="Compiler Construction Course Credit: 3.",
                     page=2,
                 ),
+                DocumentChunk(
+                    id="syllabus-2",
+                    document_id="syllabus",
+                    course_id="1",
+                    course_name="Compiler Construction",
+                    document_name="Compiler Syllabus",
+                    source_url="https://moodle.example/compiler-syllabus",
+                    text="Compiler Construction Unit 1.",
+                    page=3,
+                ),
             )
         )
     )
@@ -230,7 +240,11 @@ async def test_document_question_uses_composer_with_cited_context(tmp_path: Path
         "What is the credit value of Compiler Construction?", tmp_path, composer=composer
     )
 
-    assert answer == "Compiler Construction is a 3-credit course. [1]"
+    assert answer.startswith("Compiler Construction is a 3-credit course. [1]")
+    assert "Sources:" in answer
+    assert "[1], [2]" in answer
+    assert "[link=https://moodle.example/compiler-syllabus]" in answer
+    assert "Compiler Syllabus — Compiler Construction (pages/slides 2, 3)" in answer
     assert "Compiler Syllabus" in composer.context
     assert "page/slide 2" in composer.context
     assert "https://moodle.example/compiler-syllabus" in composer.context
