@@ -89,15 +89,11 @@ def _retrieval_answer(results: list[DocumentChunk]) -> str:
     return "\n".join(lines)
 
 
-def _default_composer() -> AnswerComposer | None:
+def _default_composer() -> AnswerComposer:
     settings = get_settings()
-    if not settings.openai_api_key:
-        return None
-    try:
-        from tracy.adapters.llm.openai import OpenAIAnswerComposer
-    except ModuleNotFoundError as error:
-        raise RuntimeError("OpenAI support is not installed. Run `uv sync --extra ai`.") from error
-    return OpenAIAnswerComposer(model=settings.openai_model, api_key=settings.openai_api_key)
+    from tracy.adapters.llm.ollama import OllamaAnswerComposer
+
+    return OllamaAnswerComposer(model=settings.ollama_model, base_url=settings.ollama_base_url)
 
 
 async def answer_question(
@@ -117,7 +113,9 @@ async def answer_question(
     if not results:
         return "I could not find relevant documents in the latest document index."
 
-    selected_composer = composer or _default_composer()
-    if selected_composer is None:
-        return _retrieval_answer(results)
-    return await selected_composer.compose(question, _document_context(results))
+    if composer is None:
+        try:
+            return await _default_composer().compose(question, _document_context(results))
+        except RuntimeError:
+            return _retrieval_answer(results)
+    return await composer.compose(question, _document_context(results))

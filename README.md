@@ -33,6 +33,8 @@ tracy reminders
 ```
 
 Run `tracy index` after syncing to extract and search downloaded course documents.
+
+Tracy uses a local Ollama model for synthesized document answers. Install Ollama, run `ollama pull gemma3:4b`, and keep Ollama running. Configure `TRACY_OLLAMA_BASE_URL` and `TRACY_OLLAMA_MODEL` in `.env` if needed. If Ollama is unavailable, Tracy falls back to citation-rich retrieval results.
 Document answers include the course, page or slide, snippet, and Moodle source URL.
 
 On the first sync, Tracy opens a browser window. Sign in to Moodle there and

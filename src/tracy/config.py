@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,10 +21,8 @@ class Settings(BaseSettings):
     moodle_profile_dir: Path = Path("data/browser-profile")
     moodle_headless: bool = False
     timezone: str = "Asia/Kolkata"
-    openai_api_key: str | None = Field(
-        default=None, validation_alias=AliasChoices("TRACY_OPENAI_API_KEY", "OPENAI_API_KEY")
-    )
-    openai_model: str = "gpt-5-mini"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "gemma3:4b"
 
 
 def get_settings() -> Settings:
