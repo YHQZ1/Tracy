@@ -19,6 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+browser = [
+  "playwright>=1.52,<2",
+]
 ai = [
   "anthropic>=0.49,<1",
   "langgraph>=0.3,<1",

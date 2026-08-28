@@ -7,6 +7,7 @@ from tracy import __version__
 from tracy.application.answer_question import answer_question
 from tracy.application.create_reminders import create_reminders
 from tracy.application.sync_moodle import sync_moodle
+from tracy.config import get_settings
 
 app = typer.Typer(
     name="tracy",
@@ -28,9 +29,14 @@ def sync() -> None:
     """Synchronize data from Moodle."""
 
     try:
-        asyncio.run(sync_moodle())
-    except NotImplementedError as error:
+        snapshot = asyncio.run(sync_moodle(get_settings()))
+    except (NotImplementedError, RuntimeError, ValueError) as error:
         console.print(f"[yellow]{error}[/yellow]")
+    else:
+        console.print(
+            f"Synced {len(snapshot.courses)} courses, {len(snapshot.assignments)} assignments, "
+            f"and {len(snapshot.documents)} documents."
+        )
 
 
 @app.command()
@@ -38,8 +44,8 @@ def ask(question: str) -> None:
     """Ask a question about the authenticated student's Moodle data."""
 
     try:
-        answer = asyncio.run(answer_question(question))
-    except NotImplementedError as error:
+        answer = asyncio.run(answer_question(question, get_settings().data_dir))
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
         console.print(f"[yellow]{error}[/yellow]")
     else:
         console.print(answer)

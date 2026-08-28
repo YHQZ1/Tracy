@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://tracy:tracy@localhost:5432/tracy"
     moodle_base_url: str | None = None
     moodle_token: str | None = None
+    moodle_profile_dir: Path = Path("data/browser-profile")
+    moodle_headless: bool = False
+    timezone: str = "Asia/Kolkata"
 
 
 def get_settings() -> Settings:

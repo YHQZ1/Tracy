@@ -5,11 +5,12 @@ into reliable answers and reminders.
 
 ## Runtime shape
 
-The first deployment has two entry points that share the same package:
+The first deployment has a CLI entry point and a local browser session that share
+the same package:
 
 ```text
 tracy CLI       → manual sync, questions, and reminder inspection
-tracy worker    → scheduled sync, document indexing, and notifications
+browser profile → manual Moodle login, then authenticated reads
 ```
 
 There is no frontend in the first version. An HTTP interface can be added later
@@ -28,11 +29,17 @@ without moving the domain or application logic.
 ## Data flow
 
 ```text
-Moodle Web Services
+Moodle AJAX Web Services through a dedicated browser session
+        ↓
+Course and activity discovery
+        ↓
+Authenticated HTML activity pages and plugin files
         ↓
 Sync and normalization
         ↓
-PostgreSQL + pgvector + object storage
+Local JSON snapshot + document files (first slice)
+        ↓
+PostgreSQL + pgvector + object storage (later)
         ↓
 Structured or document retrieval
         ↓
@@ -49,7 +56,8 @@ instructions, and attached documents.
 
 - One Moodle installation.
 - Student read-only access.
-- No stored Moodle passwords.
+- Manual sign-in in a dedicated local browser profile.
+- No stored Moodle passwords, cookies, or session keys in the repository.
 - No autonomous writes to Moodle.
 - Every answer should retain source metadata.
 - Dates inferred from documents require confirmation before reminders are created.
