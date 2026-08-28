@@ -18,9 +18,57 @@ from tracy.persistence.student_context_store import JsonStudentContextStore
 app = typer.Typer(
     name="tracy",
     help="A headless AI companion for Moodle course data, documents, and reminders.",
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
 console = Console()
+
+
+def _print_shell_help() -> None:
+    console.print("Tracy commands:")
+    console.print("  /sync       Synchronize data from Moodle")
+    console.print("  /index      Rebuild the document index")
+    console.print("  /setup      Update your local student context")
+    console.print("  /reminders  Show or create reminders")
+    console.print("  /help       Show this help")
+    console.print("  /exit       Leave the Tracy shell")
+
+
+def interactive_shell() -> None:
+    """Run an interactive loop over Tracy's existing CLI operations."""
+
+    console.print("Tracy interactive shell. Type /help for commands or /exit to quit.")
+    while True:
+        try:
+            question = input("tracy> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+        if not question:
+            continue
+        if question.casefold() in {"/exit", "/quit", "exit", "quit"}:
+            return
+        if question.casefold() in {"/help", "help"}:
+            _print_shell_help()
+        elif question.casefold() == "/sync":
+            sync()
+        elif question.casefold() == "/index":
+            index()
+        elif question.casefold() == "/setup":
+            setup()
+        elif question.casefold() == "/reminders":
+            reminders()
+        elif question.startswith("/"):
+            console.print(f"[yellow]Unknown command: {question}[/yellow]")
+        else:
+            ask(question)
+
+
+@app.callback(invoke_without_command=True)
+def _run_shell_when_no_command(ctx: typer.Context) -> None:
+    """Open the interactive shell when Tracy is invoked without a subcommand."""
+
+    if ctx.invoked_subcommand is None:
+        interactive_shell()
 
 
 @app.command()
@@ -87,6 +135,13 @@ def ask(question: str) -> None:
         console.print(f"[yellow]{error}[/yellow]")
     else:
         console.print(answer)
+
+
+@app.command()
+def shell() -> None:
+    """Open the interactive Tracy shell."""
+
+    interactive_shell()
 
 
 @app.command(name="index")
