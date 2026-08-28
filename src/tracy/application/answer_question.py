@@ -116,6 +116,12 @@ async def answer_question(
         inferred_course = infer_course_query(question, course_names)
         if inferred_course is not None:
             plan = replace(plan, course_query=inferred_course)
+    if (
+        plan.intent == "attendance"
+        and plan.group_by is None
+        and "overall" in question.casefold()
+    ):
+        plan = replace(plan, group_by="overall")
     structured_answer = answer_from_query_plan(
         plan, snapshot, student_context=student_context
     )

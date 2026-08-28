@@ -342,3 +342,36 @@ async def test_attendance_report_fetch_uses_consolidated_report_url() -> None:
     )
     assert summaries[0].course_id == "1"
     assert summaries[0].attended_sessions == 8
+
+
+@pytest.mark.asyncio
+async def test_attendance_report_restores_replacement_characters_from_course_data() -> None:
+    canonical_name = "2023-27 – Sem – VII – Compiler Construction"
+    report_name = canonical_name.replace("–", "\ufffd")
+
+    class FakePage:
+        async def goto(self, url: str, wait_until: str) -> None:
+            return None
+
+        async def content(self) -> str:
+            return f"""
+            <table><tr>
+              <th>Course Name</th><th>Total Sessions</th><th>Marked Sessions</th>
+              <th>Attended Sessions</th><th>Percentage</th>
+            </tr><tr>
+              <td>{report_name}</td><td>11</td><td>11</td><td>5</td><td>45.45%</td>
+            </tr></table>
+            """
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=Path("data/browser-profile"),
+        data_dir=Path("data"),
+    )
+
+    summaries = await source._fetch_attendance_report(
+        FakePage(), [Course(id="2834", name=canonical_name)], RuntimeError
+    )
+
+    assert summaries[0].course_id == "2834"
+    assert summaries[0].course_name == canonical_name

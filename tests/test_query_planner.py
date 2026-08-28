@@ -75,6 +75,24 @@ async def test_ollama_planner_accepts_attendance_intent() -> None:
     assert plan.course_query == "DevOps Lab"
 
 
+@pytest.mark.asyncio
+async def test_ollama_planner_accepts_overall_attendance_grouping() -> None:
+    client = FakeClient(
+        FakeResponse(
+            '{"intent":"attendance","time_range":"all",'
+            '"direction":"all","fields":[],"group_by":"overall",'
+            '"course_query":null}'
+        )
+    )
+
+    plan = await OllamaQuestionPlanner(client=client).plan(
+        "What is my overall attendance?"
+    )
+
+    assert plan.intent == "attendance"
+    assert plan.group_by == "overall"
+
+
 def test_heuristic_planner_does_not_mistake_presentations_for_attendance() -> None:
     plan = heuristic_query_plan("Show the presentations for Compiler Construction")
 

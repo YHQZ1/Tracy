@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -54,6 +55,10 @@ def _epoch(value: Any) -> datetime | None:
 
 def _clean_text(value: str) -> str:
     return " ".join(value.split())
+
+
+def _course_name_key(value: str) -> str:
+    return _clean_text(value).casefold().replace("\ufffd", "–")
 
 
 def _decode_data(value: Any) -> Any:
@@ -284,7 +289,7 @@ def parse_attendance_report_html(
             continue
         summaries.append(
             AttendanceSummary(
-                course_id=course_ids.get(course_name.casefold(), ""),
+                course_id=course_ids.get(_course_name_key(course_name), ""),
                 course_name=course_name,
                 total_sessions=total_sessions,
                 marked_sessions=marked_sessions,
@@ -580,12 +585,18 @@ class MoodleBrowserSource:
             await page.goto(report_url, wait_until="domcontentloaded")
         except timeout_error:
             return []
-        course_ids = {
-            _clean_text(course.name).casefold(): course.id for course in courses
-        }
-        return parse_attendance_report_html(
+        course_ids = {_course_name_key(course.name): course.id for course in courses}
+        summaries = parse_attendance_report_html(
             await page.content(), course_ids=course_ids, source_url=report_url
         )
+        course_names = {course.id: course.name for course in courses}
+        return [
+            replace(
+                summary,
+                course_name=course_names.get(summary.course_id, summary.course_name),
+            )
+            for summary in summaries
+        ]
 
     async def _fetch_resource_document(
         self, context: Any, module: CourseModule, course_id: str

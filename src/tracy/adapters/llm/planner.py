@@ -17,7 +17,7 @@ _SYSTEM_PROMPT = (
     "syllabus/material/announcement questions, and unsupported "
     "only when none applies. time_range must be all, this_week, next_7_days, upcoming, or "
     "overdue. direction must be all, upcoming, or past. fields may contain name, due_date, "
-    "cutoff_date, and submission_status. group_by may be course or null. Return "
+    "cutoff_date, and submission_status. group_by may be course, overall, or null. Return "
     "course_query must be null when no course is named; otherwise copy the closest matching "
     "course name from the known Moodle courses. Return JSON only."
 )
@@ -40,7 +40,7 @@ def _validated_plan(payload: Any) -> QueryPlan:
         raise RuntimeError("Ollama returned an unknown query intent.")
     if time_range not in _VALID_TIME_RANGES or direction not in _VALID_DIRECTIONS:
         raise RuntimeError("Ollama returned an invalid query time range.")
-    if group_by not in {None, "course"}:
+    if group_by not in {None, "course", "overall"}:
         raise RuntimeError("Ollama returned an invalid grouping.")
     if not isinstance(fields, list) or any(field not in _VALID_FIELDS for field in fields):
         raise RuntimeError("Ollama returned invalid query fields.")

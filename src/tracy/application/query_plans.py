@@ -36,6 +36,7 @@ def heuristic_query_plan(
     if re.search(r"\b(?:attendance|attended|present)\b", normalized):
         return QueryPlan(
             intent="attendance",
+            group_by="overall" if "overall" in normalized else None,
             course_query=infer_course_query(question, course_names),
         )
     if "assignment" in normalized or "deadline" in normalized or "due" in normalized:
@@ -274,6 +275,20 @@ def answer_from_query_plan(
             summaries = [item for item in summaries if item.course_id == course_id]
         if not summaries:
             return "I could not find attendance data in the latest Moodle snapshot."
+        if plan.group_by == "overall":
+            marked_sessions = sum(item.marked_sessions for item in summaries)
+            attended_sessions = sum(item.attended_sessions for item in summaries)
+            if marked_sessions == 0:
+                return "I could not calculate overall attendance from the latest Moodle snapshot."
+            percentage = attended_sessions / marked_sessions * 100
+            answer = (
+                f"Overall attendance: {attended_sessions}/{marked_sessions} "
+                f"marked sessions attended ({percentage:.2f}%)"
+            )
+            source_urls = sorted(
+                {item.source_url for item in summaries if item.source_url}
+            )
+            return f"{answer}\nsource: {source_urls[0]}" if source_urls else answer
         lines = ["Attendance:"]
         for summary in summaries:
             percentage = (

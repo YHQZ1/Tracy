@@ -161,6 +161,49 @@ def test_offline_attendance_question_infers_course() -> None:
     assert "9/12" in answer
 
 
+def test_overall_attendance_uses_marked_sessions_as_denominator() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(
+            Course(id="1", name="Databases"),
+            Course(id="2", name="DevOps Lab"),
+            Course(id="3", name="Project"),
+        ),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="Databases",
+                total_sessions=10,
+                marked_sessions=8,
+                attended_sessions=6,
+                percentage=75.0,
+            ),
+            AttendanceSummary(
+                course_id="2",
+                course_name="DevOps Lab",
+                total_sessions=5,
+                marked_sessions=5,
+                attended_sessions=5,
+                percentage=100.0,
+            ),
+            AttendanceSummary(
+                course_id="3",
+                course_name="Project",
+                total_sessions=3,
+                marked_sessions=0,
+                attended_sessions=0,
+                percentage=None,
+            ),
+        ),
+    )
+
+    answer = answer_from_query_plan(
+        QueryPlan(intent="attendance", group_by="overall"), snapshot
+    )
+
+    assert answer == "Overall attendance: 11/13 marked sessions attended (84.62%)"
+
+
 class StaticPlanner:
     def __init__(self, plan: QueryPlan) -> None:
         self.plan_value = plan
@@ -242,3 +285,31 @@ async def test_answer_question_executes_assignment_query_plan(tmp_path) -> None:
     assert "cutoff: Mon, 31 Aug 2026" in answer
     assert "status: Not submitted" in answer
     assert "Past CA" not in answer
+
+
+@pytest.mark.asyncio
+async def test_answer_question_recovers_overall_attendance_grouping(tmp_path) -> None:
+    JsonSnapshotStore(tmp_path).save(
+        SyncSnapshot(
+            synced_at=datetime.now(UTC),
+            courses=(Course(id="1", name="Databases"),),
+            attendance=(
+                AttendanceSummary(
+                    course_id="1",
+                    course_name="Databases",
+                    total_sessions=10,
+                    marked_sessions=8,
+                    attended_sessions=6,
+                    percentage=75.0,
+                ),
+            ),
+        )
+    )
+
+    answer = await answer_question(
+        "What is my overall attendance?",
+        tmp_path,
+        planner=StaticPlanner(QueryPlan(intent="attendance")),
+    )
+
+    assert answer == "Overall attendance: 6/8 marked sessions attended (75.00%)"
