@@ -451,3 +451,31 @@ def test_attendance_history_extracts_session_date_status_and_remarks() -> None:
     assert records[0].remarks == "Medical leave"
     assert records[0].attendance_module_name == "B2"
     assert records[1].status == "Present"
+
+
+def test_attendance_history_extracts_moodle_date_time_range() -> None:
+    html = """
+    <table class="generaltable">
+      <tr><th>Date</th><th>Description</th><th>Status</th><th>Points</th><th>Remarks</th></tr>
+      <tr>
+        <td>Mon 3 Aug 2026<br>2:30PM - 3:30PM</td>
+        <td>Regular class session</td><td>Present</td><td>2 / 2</td><td></td>
+      </tr>
+    </table>
+    """
+
+    records = parse_attendance_history_html(
+        html,
+        course_id="2803",
+        course_name="Big Data Analytics 2026 June",
+        attendance_module_id="56567",
+        attendance_module_name="BDA-1",
+        source_url="https://moodle.example/mod/attendance/view.php?id=56567",
+        timezone="Asia/Kolkata",
+    )
+
+    assert len(records) == 1
+    assert records[0].session_at == datetime(
+        2026, 8, 3, 14, 30, tzinfo=ZoneInfo("Asia/Kolkata")
+    )
+    assert records[0].description == "Regular class session"

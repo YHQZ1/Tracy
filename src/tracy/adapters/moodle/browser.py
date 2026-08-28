@@ -168,11 +168,16 @@ def _parse_local_datetime(value: str | None, timezone: str) -> datetime | None:
     if not value:
         return None
     value = _clean_text(value)
+    value = value.split(" - ", 1)[0]
     formats = (
         "%A, %d %B %Y, %I:%M %p",
         "%d %B %Y, %I:%M %p",
         "%A, %d %B %Y %I:%M %p",
         "%d %B %Y %I:%M %p",
+        "%a %d %b %Y %I:%M%p",
+        "%a %d %b %Y %I:%M %p",
+        "%d %b %Y %I:%M%p",
+        "%d %b %Y %I:%M %p",
         "%A, %d %B %Y",
         "%d %B %Y",
         "%d %b %Y",
