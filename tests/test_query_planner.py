@@ -76,6 +76,26 @@ async def test_ollama_planner_accepts_attendance_intent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ollama_planner_accepts_attendance_history_intent() -> None:
+    client = FakeClient(
+        FakeResponse(
+            '{"intent":"attendance","time_range":"all",'
+            '"direction":"all","fields":[],"group_by":null,'
+            '"course_query":"Compiler Construction Lab",'
+            '"attendance_detail":"history","attendance_status":"absent"}'
+        )
+    )
+
+    plan = await OllamaQuestionPlanner(client=client).plan(
+        "Which classes did I miss in Compiler Construction Lab?"
+    )
+
+    assert plan.intent == "attendance"
+    assert plan.attendance_detail == "history"
+    assert plan.attendance_status == "absent"
+
+
+@pytest.mark.asyncio
 async def test_ollama_planner_accepts_overall_attendance_grouping() -> None:
     client = FakeClient(
         FakeResponse(
@@ -97,3 +117,15 @@ def test_heuristic_planner_does_not_mistake_presentations_for_attendance() -> No
     plan = heuristic_query_plan("Show the presentations for Compiler Construction")
 
     assert plan.intent == "documents"
+
+
+def test_heuristic_planner_recognizes_missed_classes_as_attendance_history() -> None:
+    plan = heuristic_query_plan(
+        "Which classes did I miss in Compiler Construction Lab?",
+        ("Compiler Construction Lab",),
+    )
+
+    assert plan.intent == "attendance"
+    assert plan.attendance_detail == "history"
+    assert plan.attendance_status == "absent"
+    assert plan.course_query == "Compiler Construction Lab"

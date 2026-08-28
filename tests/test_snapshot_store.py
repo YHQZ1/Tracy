@@ -4,7 +4,13 @@ import pytest
 
 from tracy.application.answer_question import _answer_from_snapshot, answer_question
 from tracy.application.query_plans import answer_from_query_plan
-from tracy.domain.entities import Assignment, AttendanceSummary, Course, SyncSnapshot
+from tracy.domain.entities import (
+    Assignment,
+    AttendanceRecord,
+    AttendanceSummary,
+    Course,
+    SyncSnapshot,
+)
 from tracy.domain.query import QueryPlan
 from tracy.persistence.json_store import JsonSnapshotStore
 
@@ -31,6 +37,19 @@ def test_snapshot_round_trip_and_structured_answers(tmp_path) -> None:
                 attended_sessions=22,
                 percentage=95.65,
                 source_url="https://moodle.example/attendance-report",
+            ),
+        ),
+        attendance_records=(
+            AttendanceRecord(
+                id="54501:1",
+                course_id="1",
+                course_name="Databases",
+                attendance_module_id="54501",
+                attendance_module_name="B2",
+                session_at=datetime(2026, 8, 24, tzinfo=UTC),
+                status="Absent",
+                remarks="Medical leave",
+                source_url="https://moodle.example/attendance/54501",
             ),
         ),
     )
@@ -136,6 +155,50 @@ def test_attendance_answer_is_course_scoped_and_deterministic() -> None:
     assert answer == (
         "Attendance:\n"
         "- DevOps Lab — 9/12 attended, 12 marked (75.00%)"
+    )
+
+
+def test_attendance_history_filters_absences_and_course() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(Course(id="1", name="Compiler Construction Lab"),),
+        attendance_records=(
+            AttendanceRecord(
+                id="54501:1",
+                course_id="1",
+                course_name="Compiler Construction Lab",
+                attendance_module_id="54501",
+                attendance_module_name="B2",
+                session_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+                status="Absent",
+                description="Lecture",
+            ),
+            AttendanceRecord(
+                id="54501:2",
+                course_id="1",
+                course_name="Compiler Construction Lab",
+                attendance_module_id="54501",
+                attendance_module_name="B2",
+                session_at=datetime(2026, 8, 31, 10, tzinfo=UTC),
+                status="Present",
+                description="Lecture",
+            ),
+        ),
+    )
+
+    answer = answer_from_query_plan(
+        QueryPlan(
+            intent="attendance",
+            course_query="Compiler Construction Lab",
+            attendance_detail="history",
+            attendance_status="absent",
+        ),
+        snapshot,
+    )
+
+    assert answer == (
+        "Attendance history:\n"
+        "- Mon, 24 Aug 2026 at 10:00 AM — Compiler Construction Lab — Absent — B2 — Lecture"
     )
 
 

@@ -11,6 +11,7 @@ from tracy.adapters.moodle.browser import (
     MoodleBrowserSource,
     _service_data,
     parse_assignment_html,
+    parse_attendance_history_html,
     parse_attendance_report_html,
 )
 from tracy.domain.entities import Course, CourseModule
@@ -375,3 +376,78 @@ async def test_attendance_report_restores_replacement_characters_from_course_dat
 
     assert summaries[0].course_id == "2834"
     assert summaries[0].course_name == canonical_name
+
+
+@pytest.mark.asyncio
+async def test_attendance_history_fetch_reads_visible_module() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.urls: list[str] = []
+
+        async def goto(self, url: str, wait_until: str) -> None:
+            self.urls.append(url)
+
+        async def content(self) -> str:
+            return """
+            <table><tr><th>Date</th><th>Status</th></tr>
+            <tr><td>24 August 2026</td><td>Absent</td></tr></table>
+            """
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=Path("data/browser-profile"),
+        data_dir=Path("data"),
+    )
+    module = CourseModule(
+        id="54501",
+        course_id="2835",
+        section_id="18030",
+        name="B2",
+        module_type="attendance",
+        source_url="https://moodle.example/mod/attendance/view.php?id=54501",
+    )
+
+    records = await source._fetch_attendance_history(
+        FakePage(),
+        [(Course(id="2835", name="Compiler Construction Lab"), module)],
+        RuntimeError,
+    )
+
+    assert len(records) == 1
+    assert records[0].status == "Absent"
+    assert records[0].course_id == "2835"
+
+
+def test_attendance_history_extracts_session_date_status_and_remarks() -> None:
+    html = """
+    <table class="generaltable">
+      <tr><th>Date</th><th>Description</th><th>Status</th><th>Remarks</th></tr>
+      <tr>
+        <td>Monday, 24 August 2026, 10:00 AM</td><td>Lecture</td>
+        <td>Absent</td><td>Medical leave</td>
+      </tr>
+      <tr>
+        <td>Monday, 31 August 2026, 10:00 AM</td><td>Lecture</td>
+        <td>Present</td><td></td>
+      </tr>
+    </table>
+    """
+
+    records = parse_attendance_history_html(
+        html,
+        course_id="2835",
+        course_name="Compiler Construction Lab",
+        attendance_module_id="54501",
+        attendance_module_name="B2",
+        source_url="https://moodle.example/mod/attendance/view.php?id=54501",
+        timezone="Asia/Kolkata",
+    )
+
+    assert len(records) == 2
+    assert records[0].session_at == datetime(
+        2026, 8, 24, 10, 0, tzinfo=ZoneInfo("Asia/Kolkata")
+    )
+    assert records[0].status == "Absent"
+    assert records[0].remarks == "Medical leave"
+    assert records[0].attendance_module_name == "B2"
+    assert records[1].status == "Present"

@@ -75,6 +75,20 @@ class DocumentChunk:
 
 
 @dataclass(frozen=True, slots=True)
+class AttendanceRecord:
+    id: str
+    course_id: str
+    course_name: str
+    attendance_module_id: str
+    attendance_module_name: str
+    session_at: datetime
+    status: str
+    description: str | None = None
+    remarks: str | None = None
+    source_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AttendanceSummary:
     course_id: str
     course_name: str
@@ -93,6 +107,7 @@ class SyncSnapshot:
     modules: tuple[CourseModule, ...] = ()
     assignments: tuple[Assignment, ...] = ()
     attendance: tuple[AttendanceSummary, ...] = ()
+    attendance_records: tuple[AttendanceRecord, ...] = ()
     documents: tuple[Document, ...] = ()
 
 

@@ -31,6 +31,7 @@ tracy setup
 tracy index
 tracy ask "What assignments are due this week?"
 tracy ask "What is my attendance in DevOps Lab?"
+tracy ask "Which classes did I miss in Compiler Construction Lab?"
 tracy reminders
 ```
 
@@ -43,7 +44,8 @@ Tracy uses a local Ollama model for query planning and synthesized document answ
 Document answers include the course, page or slide, snippet, and Moodle source URL.
 Attendance answers currently use the consolidated Moodle report and include each
 course's total, marked, and attended sessions plus percentage. Individual session
-history is a later slice.
+history answers use the visible Moodle attendance activity for each course and
+include session date, status, batch/activity, and source URL.
 
 On the first sync, Tracy opens a browser window. Sign in to Moodle there and
 press Enter in the terminal. Tracy never asks for or stores your Moodle password.

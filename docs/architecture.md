@@ -63,9 +63,9 @@ metadata to activities and individual attendance records, then apply this contex
 through deterministic filters before an LLM sees any answer data. The current
 sync already maps assignment modules to Moodle section titles, so labels such as
 `Batch L1`, `Batch L2`, and `A2` can scope assignment answers. It also reads the
-consolidated student attendance report into typed per-course summaries. A matching
-batch-specific activity wins over a general activity with the same name. Individual
-attendance session history remains a later slice.
+consolidated student attendance report into typed per-course summaries and fetches
+individual session history from visible attendance modules. A matching
+batch-specific activity wins over a general activity with the same name.
 
 ## Initial constraints
 

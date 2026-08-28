@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 from tracy.domain.entities import (
     Assignment,
+    AttendanceRecord,
     AttendanceSummary,
     Course,
     CourseModule,
@@ -172,6 +173,11 @@ def _parse_local_datetime(value: str | None, timezone: str) -> datetime | None:
         "%d %B %Y, %I:%M %p",
         "%A, %d %B %Y %I:%M %p",
         "%d %B %Y %I:%M %p",
+        "%A, %d %B %Y",
+        "%d %B %Y",
+        "%d %b %Y",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
     )
     for date_format in formats:
         try:
@@ -301,6 +307,85 @@ def parse_attendance_report_html(
     return summaries
 
 
+def _header_index(row: list[str], names: set[str]) -> int | None:
+    for index, cell in enumerate(row):
+        if _clean_text(cell).casefold() in names:
+            return index
+    return None
+
+
+def parse_attendance_history_html(
+    html: str,
+    *,
+    course_id: str,
+    course_name: str,
+    attendance_module_id: str,
+    attendance_module_name: str,
+    source_url: str,
+    timezone: str,
+) -> list[AttendanceRecord]:
+    """Parse one student attendance activity's session history table."""
+
+    parser = MoodleHtmlParser()
+    parser.feed(html)
+    date_names = {"date", "session date", "sessiondate", "sessdate"}
+    status_names = {"status", "attendance", "attendance status", "user status"}
+    description_names = {"description", "session description"}
+    remarks_names = {"remarks", "remark"}
+    header: tuple[int, int, int | None, int | None] | None = None
+    data_start = 0
+    for index, row in enumerate(parser.rows):
+        date_index = _header_index(row, date_names)
+        status_index = _header_index(row, status_names)
+        if date_index is not None and status_index is not None:
+            header = (
+                date_index,
+                status_index,
+                _header_index(row, description_names),
+                _header_index(row, remarks_names),
+            )
+            data_start = index + 1
+            break
+    if header is None:
+        return []
+
+    date_index, status_index, description_index, remarks_index = header
+    records: list[AttendanceRecord] = []
+    for index, row in enumerate(parser.rows[data_start:], start=data_start):
+        required_index = max(date_index, status_index)
+        if len(row) <= required_index:
+            continue
+        session_at = _parse_local_datetime(row[date_index], timezone)
+        status = _clean_text(row[status_index]) or "Unmarked"
+        if session_at is None:
+            continue
+        description = (
+            _clean_text(row[description_index])
+            if description_index is not None and len(row) > description_index
+            else ""
+        )
+        remarks = (
+            _clean_text(row[remarks_index])
+            if remarks_index is not None and len(row) > remarks_index
+            else ""
+        )
+        records.append(
+            AttendanceRecord(
+                id=f"{attendance_module_id}:{index}",
+                course_id=course_id,
+                course_name=course_name,
+                attendance_module_id=attendance_module_id,
+                attendance_module_name=attendance_module_name,
+                session_at=session_at,
+                status=status,
+                description=description or None,
+                remarks=remarks or None,
+                source_url=source_url,
+            )
+        )
+    return records
+
+
 class MoodleBrowserSource:
     """Read Moodle through a persistent, manually authenticated browser profile."""
 
@@ -350,6 +435,7 @@ class MoodleBrowserSource:
                 attendance = await self._fetch_attendance_report(
                     page, courses, PlaywrightTimeoutError
                 )
+                attendance_modules: list[tuple[Course, CourseModule]] = []
                 documents: list[Document] = []
 
                 for course in courses:
@@ -374,12 +460,18 @@ class MoodleBrowserSource:
                                     f"assignment-{module.id}",
                                 )
                             )
+                        elif module.module_type == "attendance":
+                            attendance_modules.append((course, module))
                         elif module.module_type in {"resource", "file"}:
                             documents.extend(
                                 await self._fetch_resource_document(
                                     context, module, course.id
                                 )
                             )
+
+                attendance_records = await self._fetch_attendance_history(
+                    page, attendance_modules, PlaywrightTimeoutError
+                )
 
                 return SyncSnapshot(
                     synced_at=datetime.now(tz=UTC),
@@ -388,6 +480,7 @@ class MoodleBrowserSource:
                     modules=tuple(modules),
                     assignments=tuple(assignments),
                     attendance=tuple(attendance),
+                    attendance_records=tuple(attendance_records),
                     documents=tuple(documents),
                 )
             finally:
@@ -597,6 +690,33 @@ class MoodleBrowserSource:
             )
             for summary in summaries
         ]
+
+    async def _fetch_attendance_history(
+        self,
+        page: Any,
+        attendance_modules: list[tuple[Course, CourseModule]],
+        timeout_error: Any,
+    ) -> list[AttendanceRecord]:
+        records: list[AttendanceRecord] = []
+        for course, module in attendance_modules:
+            if not module.source_url:
+                continue
+            try:
+                await page.goto(module.source_url, wait_until="domcontentloaded")
+            except timeout_error:
+                continue
+            records.extend(
+                parse_attendance_history_html(
+                    await page.content(),
+                    course_id=course.id,
+                    course_name=course.name,
+                    attendance_module_id=module.id,
+                    attendance_module_name=module.name,
+                    source_url=module.source_url,
+                    timezone=self.timezone,
+                )
+            )
+        return records
 
     async def _fetch_resource_document(
         self, context: Any, module: CourseModule, course_id: str

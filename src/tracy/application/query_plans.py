@@ -33,11 +33,23 @@ def heuristic_query_plan(
     """Provide an offline plan when the local planner is unavailable."""
 
     normalized = question.casefold()
-    if re.search(r"\b(?:attendance|attended|present)\b", normalized):
+    if re.search(
+        r"\b(?:attendance|attended|present|miss|missed|missing|absent|absence)\b",
+        normalized,
+    ):
+        is_history = bool(
+            re.search(
+                r"\b(?:history|miss|missed|missing|absent|absence|classes|sessions)\b",
+                normalized,
+            )
+        )
+        is_absent = bool(re.search(r"\b(?:miss|missed|missing|absent|absence)\b", normalized))
         return QueryPlan(
             intent="attendance",
             group_by="overall" if "overall" in normalized else None,
             course_query=infer_course_query(question, course_names),
+            attendance_detail="history" if is_history else "summary",
+            attendance_status="absent" if is_absent else "all",
         )
     if "assignment" in normalized or "deadline" in normalized or "due" in normalized:
         if "next seven" in normalized or "next 7" in normalized:
@@ -248,6 +260,19 @@ def _assignment_matches_time(
     return True
 
 
+def _attendance_status_matches(status: str, requested: str) -> bool:
+    normalized = status.casefold()
+    if requested == "absent":
+        return "absent" in normalized or normalized in {"a", "ab"}
+    if requested == "present":
+        return "present" in normalized or normalized == "p"
+    if requested == "late":
+        return "late" in normalized or normalized == "l"
+    if requested == "excused":
+        return "excused" in normalized or normalized == "e"
+    return True
+
+
 def answer_from_query_plan(
     plan: QueryPlan,
     snapshot: SyncSnapshot,
@@ -264,6 +289,47 @@ def answer_from_query_plan(
         lines.extend(f"- {course.name}" for course in snapshot.courses)
         return "\n".join(lines)
     if plan.intent == "attendance":
+        if plan.attendance_detail == "history":
+            records = list(snapshot.attendance_records)
+            if plan.course_query:
+                course_id = resolve_course_id(plan.course_query, snapshot.courses)
+                if course_id is None:
+                    return (
+                        "I could not identify a unique Moodle course matching "
+                        f"{plan.course_query!r}."
+                    )
+                records = [item for item in records if item.course_id == course_id]
+            if plan.attendance_status != "all":
+                records = [
+                    item
+                    for item in records
+                    if _attendance_status_matches(item.status, plan.attendance_status)
+                ]
+            if not records:
+                if not snapshot.attendance_records:
+                    return (
+                        "I could not find individual attendance history in the latest "
+                        "Moodle snapshot."
+                    )
+                return "I found no matching attendance history in the latest Moodle snapshot."
+            records.sort(key=lambda item: item.session_at)
+            lines = ["Attendance history:"]
+            for record in records:
+                session = record.session_at.strftime("%a, %d %b %Y at %I:%M %p")
+                details = [
+                    session,
+                    record.course_name,
+                    record.status,
+                    record.attendance_module_name,
+                ]
+                if record.description:
+                    details.append(record.description)
+                lines.append(f"- {' — '.join(details)}")
+                if record.remarks:
+                    lines.append(f"  remarks: {record.remarks}")
+                if record.source_url:
+                    lines.append(f"  source: {record.source_url}")
+            return "\n".join(lines)
         summaries = list(snapshot.attendance)
         if plan.course_query:
             course_id = resolve_course_id(plan.course_query, snapshot.courses)
