@@ -12,6 +12,7 @@ from tracy.adapters.moodle.browser import (
     _service_data,
     parse_assignment_html,
 )
+from tracy.domain.entities import CourseModule
 
 
 def test_service_data_decodes_moodle_nested_json() -> None:
@@ -170,6 +171,46 @@ async def test_authentication_check_retries_navigation_context_reset() -> None:
     )
 
     assert await source._is_authenticated(FakePage())
+
+
+@pytest.mark.asyncio
+async def test_resource_fetch_handles_direct_download_response(tmp_path: Path) -> None:
+    class FakeResponse:
+        ok = True
+        url = "https://moodle.example/pluginfile.php/1/course/slides.pdf"
+        headers = {"content-type": "application/pdf"}
+
+        async def body(self) -> bytes:
+            return b"%PDF-test"
+
+    class FakeRequest:
+        async def get(self, url: str) -> FakeResponse:
+            assert url == "https://moodle.example/mod/resource/view.php?id=57215"
+            return FakeResponse()
+
+    class FakeContext:
+        request = FakeRequest()
+
+    source = MoodleBrowserSource(
+        base_url="https://moodle.example",
+        profile_dir=tmp_path / "profile",
+        data_dir=tmp_path,
+    )
+    module = CourseModule(
+        id="57215",
+        course_id="2834",
+        section_id="18026",
+        name="Unit I ppt",
+        module_type="resource",
+        source_url="https://moodle.example/mod/resource/view.php?id=57215",
+    )
+
+    documents = await source._fetch_resource_document(FakeContext(), module, "2834")
+
+    assert len(documents) == 1
+    assert documents[0].name == "slides.pdf"
+    assert documents[0].local_path is not None
+    assert documents[0].local_path.read_bytes() == b"%PDF-test"
 
 
 def test_assignment_html_extracts_dates_description_submission_and_files() -> None:

@@ -302,13 +302,12 @@ class MoodleBrowserSource:
                                     submission_files,
                                     course.id,
                                     f"assignment-{module.id}",
-                                    page,
                                 )
                             )
                         elif module.module_type in {"resource", "file"}:
                             documents.extend(
                                 await self._fetch_resource_document(
-                                    context, page, module, course.id, PlaywrightTimeoutError
+                                    context, module, course.id
                                 )
                             )
 
@@ -504,20 +503,40 @@ class MoodleBrowserSource:
         )
 
     async def _fetch_resource_document(
-        self, context: Any, page: Any, module: CourseModule, course_id: str, timeout_error: Any
+        self, context: Any, module: CourseModule, course_id: str
     ) -> list[Document]:
-        try:
-            await page.goto(module.source_url, wait_until="domcontentloaded")
-        except timeout_error:
-            raise MoodleConnectionError(f"Timed out loading resource {module.id}.")
+        if not module.source_url:
+            return []
+
+        response = await context.request.get(module.source_url)
+        if not response.ok:
+            return []
+
+        content_type = response.headers.get("content-type", "").lower()
+        content_disposition = response.headers.get("content-disposition", "").lower()
+        is_html = "text/html" in content_type or "application/xhtml+xml" in content_type
+        is_download = (
+            "pluginfile.php" in response.url
+            or "attachment" in content_disposition
+            or (bool(content_type) and not is_html)
+        )
+        if is_download:
+            return [
+                self._persist_document(
+                    await response.body(),
+                    response.url,
+                    course_id,
+                    module.name,
+                    1,
+                    response.headers.get("content-type"),
+                )
+            ]
+
         file_urls: list[str] = []
-        if "pluginfile.php" in page.url:
-            file_urls.append(page.url)
-        else:
-            parser = MoodleHtmlParser()
-            parser.feed(await page.content())
-            file_urls.extend(href for href, _ in parser.links if "pluginfile.php" in href)
-        return await self._download_files(context, file_urls, course_id, module.name, page)
+        parser = MoodleHtmlParser()
+        parser.feed(await response.text())
+        file_urls.extend(href for href, _ in parser.links if "pluginfile.php" in href)
+        return await self._download_files(context, file_urls, course_id, module.name)
 
     async def _download_files(
         self,
@@ -525,7 +544,6 @@ class MoodleBrowserSource:
         file_urls: list[str],
         course_id: str,
         label: str,
-        page: Any,
     ) -> list[Document]:
         documents: list[Document] = []
         for index, file_url in enumerate(dict.fromkeys(file_urls), start=1):
@@ -535,22 +553,39 @@ class MoodleBrowserSource:
             response = await context.request.get(absolute_file_url)
             if not response.ok:
                 continue
-            content = await response.body()
-            digest = hashlib.sha256(content).hexdigest()
-            filename = Path(urlparse(absolute_file_url).path).name or f"{label}-{index}"
-            filename = re.sub(r"[^A-Za-z0-9._-]+", "_", unquote(filename))
-            destination = self.data_dir / "documents" / course_id / filename
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(content)
             documents.append(
-                Document(
-                    id=f"{course_id}:{digest}",
-                    course_id=course_id,
-                    name=filename,
-                    source_url=absolute_file_url,
-                    content_hash=digest,
-                    local_path=destination,
-                    content_type=response.headers.get("content-type"),
+                self._persist_document(
+                    await response.body(),
+                    absolute_file_url,
+                    course_id,
+                    label,
+                    index,
+                    response.headers.get("content-type"),
                 )
             )
         return documents
+
+    def _persist_document(
+        self,
+        content: bytes,
+        source_url: str,
+        course_id: str,
+        label: str,
+        index: int,
+        content_type: str | None,
+    ) -> Document:
+        digest = hashlib.sha256(content).hexdigest()
+        filename = Path(urlparse(source_url).path).name or f"{label}-{index}"
+        filename = re.sub(r"[^A-Za-z0-9._-]+", "_", unquote(filename))
+        destination = self.data_dir / "documents" / course_id / filename
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+        return Document(
+            id=f"{course_id}:{digest}",
+            course_id=course_id,
+            name=filename,
+            source_url=source_url,
+            content_hash=digest,
+            local_path=destination,
+            content_type=content_type,
+        )
