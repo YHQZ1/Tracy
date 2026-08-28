@@ -24,6 +24,7 @@ def test_service_data_decodes_moodle_nested_json() -> None:
 async def test_service_page_reads_response_before_navigation() -> None:
     class FakeResponse:
         url = "https://moodle.example/lib/ajax/service.php"
+        status = 200
 
         def __init__(self) -> None:
             self.navigated = False
@@ -89,6 +90,7 @@ async def test_service_page_reads_response_before_navigation() -> None:
 async def test_service_page_waits_for_ajax_after_domcontentloaded() -> None:
     class FakeResponse:
         url = "https://moodle.example/lib/ajax/service.php"
+        status = 200
 
         async def json(self) -> object:
             return [{"error": False, "data": '{"courses": [{"id": 42}]}'}]

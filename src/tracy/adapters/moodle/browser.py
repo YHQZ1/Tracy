@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from tracy.domain.entities import (
@@ -271,6 +271,7 @@ class MoodleBrowserSource:
             context = await playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.profile_dir),
                 headless=self.headless,
+                service_workers="block",
             )
             try:
                 page = context.pages[0] if context.pages else await context.new_page()
@@ -362,28 +363,43 @@ class MoodleBrowserSource:
 
     async def _service_page(self, page: Any, url: str, method: str, timeout_error: Any) -> Any:
         responses: list[tuple[str, Any]] = []
+        observed: list[str] = []
         route_pattern = "**/lib/ajax/service.php*"
         target_found = asyncio.Event()
+
+        def record_observation(value: str) -> None:
+            if value not in observed and len(observed) < 12:
+                observed.append(value)
+
+        def response_info(response_url: str) -> str:
+            info = parse_qs(urlparse(response_url).query).get("info", ["unknown"])[0]
+            return unquote(info).replace("\n", " ")[:100]
 
         async def capture_route(route: Any) -> None:
             try:
                 response = await route.fetch()
             except Exception:
+                record_observation("fetch-error")
                 await route.continue_()
                 return
 
+            info = response_info(response.url)
             try:
                 # Read the body before fulfilling the route. This keeps the
                 # response independent of any navigation that follows it.
                 data = _service_data(await response.json())
             except (json.JSONDecodeError, MoodleConnectionError):
+                record_observation(f"{info}:status={response.status}:invalid-or-error-payload")
                 data = None
             except Exception:
                 # Moodle pages issue several background service requests. A
                 # malformed or disappearing response is not the target request.
+                record_observation(f"{info}:status={response.status}:unreadable-payload")
                 data = None
             await route.fulfill(response=response)
             if data is not None:
+                shape = ",".join(sorted(data)) if isinstance(data, dict) else type(data).__name__
+                record_observation(f"{info}:status={response.status}:shape={shape[:80]}")
                 responses.append((response.url, data))
                 if method in unquote(response.url) or self._service_result_matches(method, data):
                     target_found.set()
@@ -405,8 +421,10 @@ class MoodleBrowserSource:
         for response_url, data in responses:
             if method in unquote(response_url) or self._service_result_matches(method, data):
                 return data
+        observed_text = "; ".join(observed) or "none"
         raise MoodleConnectionError(
-            f"Moodle did not return the expected AJAX function {method} while loading {url}."
+            f"Moodle did not return the expected AJAX function {method} while loading {url}. "
+            f"Observed: {observed_text}."
         )
 
     async def _fetch_courses(self, page: Any, timeout_error: Any) -> list[Course]:
