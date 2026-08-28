@@ -1,7 +1,10 @@
 from datetime import UTC, date, datetime
 
-from tracy.application.answer_question import _answer_from_snapshot
+import pytest
+
+from tracy.application.answer_question import _answer_from_snapshot, answer_question
 from tracy.domain.entities import Assignment, Course, SyncSnapshot
+from tracy.domain.query import QueryPlan
 from tracy.persistence.json_store import JsonSnapshotStore
 
 
@@ -63,3 +66,60 @@ def test_this_week_assignments_exclude_past_dates_and_show_course() -> None:
 
     assert "Past CA" in historical_answer
     assert "Databases" in historical_answer
+
+
+class StaticPlanner:
+    def __init__(self, plan: QueryPlan) -> None:
+        self.plan_value = plan
+
+    async def plan(self, question: str, course_names: tuple[str, ...] = ()) -> QueryPlan:
+        return self.plan_value
+
+
+@pytest.mark.asyncio
+async def test_answer_question_executes_assignment_query_plan(tmp_path) -> None:
+    JsonSnapshotStore(tmp_path).save(
+        SyncSnapshot(
+            synced_at=datetime.now(UTC),
+            courses=(Course(id="1", name="Databases"),),
+            assignments=(
+                Assignment(
+                    id="past",
+                    course_id="1",
+                    name="Past CA",
+                    due_at=datetime(2026, 8, 25, tzinfo=UTC),
+                    cutoff_at=datetime(2026, 8, 26, tzinfo=UTC),
+                    submission_status="Submitted",
+                ),
+                Assignment(
+                    id="upcoming",
+                    course_id="1",
+                    name="Upcoming CA",
+                    due_at=datetime(2026, 8, 30, tzinfo=UTC),
+                    cutoff_at=datetime(2026, 8, 31, tzinfo=UTC),
+                    submission_status="Not submitted",
+                ),
+            ),
+        )
+    )
+    planner = StaticPlanner(
+        QueryPlan(
+            intent="assignments",
+            time_range="next_7_days",
+            direction="upcoming",
+            fields=("due_date", "cutoff_date", "submission_status"),
+            group_by="course",
+        )
+    )
+
+    answer = await answer_question(
+        "For every upcoming assignment, show the due date and status.",
+        tmp_path,
+        planner=planner,
+    )
+    assert "Databases:" in answer
+    assert "Upcoming CA" in answer
+    assert "Sun, 30 Aug 2026" in answer
+    assert "cutoff: Mon, 31 Aug 2026" in answer
+    assert "status: Not submitted" in answer
+    assert "Past CA" not in answer

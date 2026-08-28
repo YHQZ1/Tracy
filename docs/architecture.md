@@ -41,6 +41,8 @@ Local JSON snapshot + document files (first slice)
         ↓
 PostgreSQL + pgvector + object storage (later)
         ↓
+Local Ollama query planning → validated structured query execution
+        ↓
 Structured or document retrieval
         ↓
 LLM answer composition with citations

@@ -1,67 +1,21 @@
 """Answer questions using structured Moodle data and indexed documents."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 from tracy.adapters.documents.index import JsonDocumentIndexStore
+from tracy.application.query_plans import answer_from_query_plan, heuristic_query_plan
 from tracy.config import get_settings
-from tracy.domain.entities import Assignment, DocumentChunk, SyncSnapshot
-from tracy.domain.ports import AnswerComposer
+from tracy.domain.entities import DocumentChunk, SyncSnapshot
+from tracy.domain.ports import AnswerComposer, QuestionPlanner
 from tracy.persistence.json_store import JsonSnapshotStore
-
-
-def _format_assignment(assignment: Assignment, course_name: str | None = None) -> str:
-    due = (
-        assignment.due_at.strftime("%a, %d %b %Y at %I:%M %p")
-        if assignment.due_at
-        else "no due date"
-    )
-    course = f" — {course_name}" if course_name else ""
-    source = f" — source: {assignment.source_url}" if assignment.source_url else ""
-    return f"- {assignment.name}{course} — {due}{source}"
-
-
-def _calendar_week_bounds(today: date) -> tuple[date, date]:
-    start = today - timedelta(days=today.weekday())
-    return start, start + timedelta(days=7)
-
-
-def _upcoming_this_week_bounds(today: date) -> tuple[date, date]:
-    start, end = _calendar_week_bounds(today)
-    return max(today, start), end
 
 
 def _answer_from_snapshot(
     question: str, snapshot: SyncSnapshot, *, today: date | None = None
 ) -> str:
-    normalized = question.casefold()
-    if "course" in normalized or "enrolled" in normalized:
-        if not snapshot.courses:
-            return "I could not find any courses in the latest Moodle snapshot."
-        lines = [f"You are enrolled in {len(snapshot.courses)} courses:"]
-        lines.extend(f"- {course.name}" for course in snapshot.courses)
-        return "\n".join(lines)
-
-    if "assignment" in normalized or "deadline" in normalized or "due" in normalized:
-        assignments = list(snapshot.assignments)
-        if "this week" in normalized:
-            current_date = today or datetime.now().date()
-            if "were due" in normalized or "was due" in normalized:
-                start, end = _calendar_week_bounds(current_date)
-            else:
-                start, end = _upcoming_this_week_bounds(current_date)
-            assignments = [
-                item for item in assignments if item.due_at and start <= item.due_at.date() < end
-            ]
-        assignments.sort(key=lambda item: item.due_at or datetime.max.replace(tzinfo=UTC))
-        if not assignments:
-            return "I found no matching assignments in the latest Moodle snapshot."
-        course_names = {course.id: course.name for course in snapshot.courses}
-        return "Assignments:\n" + "\n".join(
-            _format_assignment(item, course_names.get(item.course_id)) for item in assignments
-        )
-
-    return (
+    answer = answer_from_query_plan(heuristic_query_plan(question), snapshot, today=today)
+    return answer or (
         "The current Tracy slice can answer course-list and assignment-deadline questions. "
         "Run `tracy sync` first if the snapshot is out of date."
     )
@@ -116,15 +70,37 @@ def _default_composer() -> AnswerComposer:
     return OllamaAnswerComposer(model=settings.ollama_model, base_url=settings.ollama_base_url)
 
 
+def _default_planner() -> QuestionPlanner:
+    settings = get_settings()
+    from tracy.adapters.llm.planner import OllamaQuestionPlanner
+
+    return OllamaQuestionPlanner(model=settings.ollama_model, base_url=settings.ollama_base_url)
+
+
 async def answer_question(
-    question: str, data_dir: Path, *, composer: AnswerComposer | None = None
+    question: str,
+    data_dir: Path,
+    *,
+    composer: AnswerComposer | None = None,
+    planner: QuestionPlanner | None = None,
 ) -> str:
-    """Answer supported structured questions from the local snapshot."""
+    """Answer a question using a query plan and local Moodle data."""
 
     snapshot = JsonSnapshotStore(data_dir).load()
-    answer = _answer_from_snapshot(question, snapshot)
-    if not answer.startswith("The current Tracy slice"):
-        return answer
+    active_planner = (
+        planner if planner is not None else _default_planner() if composer is None else None
+    )
+    plan = heuristic_query_plan(question)
+    if active_planner is not None:
+        try:
+            plan = await active_planner.plan(
+                question, tuple(course.name for course in snapshot.courses)
+            )
+        except RuntimeError:
+            pass
+    structured_answer = answer_from_query_plan(plan, snapshot)
+    if structured_answer is not None:
+        return structured_answer
 
     try:
         results = JsonDocumentIndexStore(data_dir).load().search(question)
