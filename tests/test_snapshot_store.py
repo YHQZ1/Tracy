@@ -56,3 +56,10 @@ def test_this_week_assignments_exclude_past_dates_and_show_course() -> None:
     assert "Upcoming CA" in answer
     assert "Past CA" not in answer
     assert "Databases" in answer
+
+    historical_answer = _answer_from_snapshot(
+        "what assignments were due this week?", snapshot, today=date(2026, 8, 28)
+    )
+
+    assert "Past CA" in historical_answer
+    assert "Databases" in historical_answer

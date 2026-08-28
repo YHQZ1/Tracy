@@ -18,9 +18,14 @@ def _format_assignment(assignment: Assignment, course_name: str | None = None) -
     return f"- {assignment.name}{course} — {due}{source}"
 
 
-def _this_week_bounds(today: date) -> tuple[date, date]:
+def _calendar_week_bounds(today: date) -> tuple[date, date]:
     start = today - timedelta(days=today.weekday())
-    return max(today, start), start + timedelta(days=7)
+    return start, start + timedelta(days=7)
+
+
+def _upcoming_this_week_bounds(today: date) -> tuple[date, date]:
+    start, end = _calendar_week_bounds(today)
+    return max(today, start), end
 
 
 def _answer_from_snapshot(
@@ -37,7 +42,11 @@ def _answer_from_snapshot(
     if "assignment" in normalized or "deadline" in normalized or "due" in normalized:
         assignments = list(snapshot.assignments)
         if "this week" in normalized:
-            start, end = _this_week_bounds(today or datetime.now().date())
+            current_date = today or datetime.now().date()
+            if "were due" in normalized or "was due" in normalized:
+                start, end = _calendar_week_bounds(current_date)
+            else:
+                start, end = _upcoming_this_week_bounds(current_date)
             assignments = [
                 item
                 for item in assignments
