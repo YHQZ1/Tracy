@@ -430,7 +430,7 @@ class MoodleBrowserSource:
     async def _fetch_courses(self, page: Any, timeout_error: Any) -> list[Course]:
         data = await self._service_page(
             page,
-            f"{self.base_url}/my/",
+            f"{self.base_url}/my/courses.php",
             "core_course_get_enrolled_courses_by_timeline_classification",
             timeout_error,
         )
