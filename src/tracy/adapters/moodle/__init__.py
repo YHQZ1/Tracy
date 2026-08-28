@@ -1,0 +1,1 @@
+"""Moodle Web Services adapter."""

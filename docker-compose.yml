@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: tracy
+      POSTGRES_USER: tracy
+      POSTGRES_PASSWORD: tracy
+    ports:
+      - "5432:5432"
+    volumes:
+      - tracy-postgres:/var/lib/postgresql/data
+
+volumes:
+  tracy-postgres:
