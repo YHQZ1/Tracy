@@ -14,6 +14,7 @@ from tracy.config import get_settings
 from tracy.domain.entities import DocumentChunk, SyncSnapshot
 from tracy.domain.ports import AnswerComposer, QuestionPlanner
 from tracy.persistence.json_store import JsonSnapshotStore
+from tracy.persistence.student_context_store import JsonStudentContextStore
 
 
 def _answer_from_snapshot(
@@ -95,6 +96,10 @@ async def answer_question(
     """Answer a question using a query plan and local Moodle data."""
 
     snapshot = JsonSnapshotStore(data_dir).load()
+    try:
+        student_context = JsonStudentContextStore(data_dir).load()
+    except FileNotFoundError:
+        student_context = None
     active_planner = (
         planner if planner is not None else _default_planner() if composer is None else None
     )
@@ -111,7 +116,9 @@ async def answer_question(
         inferred_course = infer_course_query(question, course_names)
         if inferred_course is not None:
             plan = replace(plan, course_query=inferred_course)
-    structured_answer = answer_from_query_plan(plan, snapshot)
+    structured_answer = answer_from_query_plan(
+        plan, snapshot, student_context=student_context
+    )
     if structured_answer is not None:
         return structured_answer
 

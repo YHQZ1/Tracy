@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from tracy.domain.entities import Assignment, Course, SyncSnapshot
 from tracy.domain.query import QueryPlan
+from tracy.domain.student import StudentContext
 
 _COURSE_METADATA = {
     "april",
@@ -130,6 +131,68 @@ def resolve_course_id(course_query: str | None, courses: tuple[Course, ...]) -> 
     return candidates[0].id if len(candidates) == 1 else None
 
 
+def _normalize_batch_label(value: str) -> str:
+    compact = re.sub(r"[^A-Z0-9]", "", value.upper())
+    if compact.startswith("BATCH"):
+        compact = compact[5:]
+    if compact.startswith("LAB") and compact[3:].isdigit():
+        return f"L{compact[3:]}"
+    return compact
+
+
+def _section_batch_label(title: str) -> str | None:
+    normalized = title.casefold()
+    match = re.search(r"\b(?:batch|group)\s*[-:]?\s*([a-z]\s*\d+)\b", normalized)
+    if match:
+        return _normalize_batch_label(match.group(1))
+    match = re.search(r"\blab\s*[-:]?\s*(\d+)\b", normalized)
+    if match:
+        return _normalize_batch_label(f"L{match.group(1)}")
+    match = re.fullmatch(r"\s*([a-z]\s*\d+)\s*", normalized)
+    return _normalize_batch_label(match.group(1)) if match else None
+
+
+def _assignment_batch_labels(snapshot: SyncSnapshot) -> dict[str, str | None]:
+    sections = {section.id: section for section in snapshot.sections}
+    return {
+        module.id: _section_batch_label(sections[module.section_id].title)
+        if module.section_id in sections
+        else None
+        for module in snapshot.modules
+        if module.module_type == "assign"
+    }
+
+
+def _scope_assignments(
+    assignments: list[Assignment], snapshot: SyncSnapshot, context: StudentContext
+) -> list[Assignment]:
+    """Select matching batch activities, falling back to general activities by name."""
+
+    configured_batches = {
+        item.course_id: _normalize_batch_label(item.batch) for item in context.lab_batches
+    }
+    batch_labels = _assignment_batch_labels(snapshot)
+    grouped: dict[tuple[str, str], list[Assignment]] = {}
+    for assignment in assignments:
+        key = (assignment.course_id, _normalize_course_name(assignment.name))
+        grouped.setdefault(key, []).append(assignment)
+
+    selected: list[Assignment] = []
+    for group in grouped.values():
+        explicit = [item for item in group if batch_labels.get(item.id)]
+        if not explicit:
+            selected.extend(group)
+            continue
+        configured_batch = configured_batches.get(group[0].course_id)
+        matching = [
+            item
+            for item in explicit
+            if batch_labels.get(item.id) == configured_batch
+        ]
+        selected.extend(matching or [item for item in group if not batch_labels.get(item.id)])
+    return selected
+
+
 def _format_assignment(
     assignment: Assignment,
     course_name: str,
@@ -180,7 +243,11 @@ def _assignment_matches_time(
 
 
 def answer_from_query_plan(
-    plan: QueryPlan, snapshot: SyncSnapshot, *, today: date | None = None
+    plan: QueryPlan,
+    snapshot: SyncSnapshot,
+    *,
+    today: date | None = None,
+    student_context: StudentContext | None = None,
 ) -> str | None:
     """Execute a plan against typed local records; return None for document queries."""
 
@@ -209,6 +276,8 @@ def answer_from_query_plan(
             for assignment in assignments
             if assignment.course_id == course_id
         ]
+    if student_context is not None:
+        assignments = _scope_assignments(assignments, snapshot, student_context)
     assignments.sort(key=lambda item: item.due_at or datetime.max.replace(tzinfo=UTC))
     if not assignments:
         return "I found no matching assignments in the latest Moodle snapshot."
