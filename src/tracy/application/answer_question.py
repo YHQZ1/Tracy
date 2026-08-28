@@ -7,22 +7,25 @@ from tracy.domain.entities import Assignment, SyncSnapshot
 from tracy.persistence.json_store import JsonSnapshotStore
 
 
-def _format_assignment(assignment: Assignment) -> str:
+def _format_assignment(assignment: Assignment, course_name: str | None = None) -> str:
     due = (
         assignment.due_at.strftime("%a, %d %b %Y at %I:%M %p")
         if assignment.due_at
         else "no due date"
     )
-    citation = f" ([source]({assignment.source_url}))" if assignment.source_url else ""
-    return f"- {assignment.name} — {due}{citation}"
+    course = f" — {course_name}" if course_name else ""
+    source = f" — source: {assignment.source_url}" if assignment.source_url else ""
+    return f"- {assignment.name}{course} — {due}{source}"
 
 
-def _this_week_bounds(today: date) -> tuple[datetime, datetime]:
-    start = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
-    return start, start + timedelta(days=7)
+def _this_week_bounds(today: date) -> tuple[date, date]:
+    start = today - timedelta(days=today.weekday())
+    return max(today, start), start + timedelta(days=7)
 
 
-def _answer_from_snapshot(question: str, snapshot: SyncSnapshot) -> str:
+def _answer_from_snapshot(
+    question: str, snapshot: SyncSnapshot, *, today: date | None = None
+) -> str:
     normalized = question.casefold()
     if "course" in normalized or "enrolled" in normalized:
         if not snapshot.courses:
@@ -34,18 +37,21 @@ def _answer_from_snapshot(question: str, snapshot: SyncSnapshot) -> str:
     if "assignment" in normalized or "deadline" in normalized or "due" in normalized:
         assignments = list(snapshot.assignments)
         if "this week" in normalized:
-            start, end = _this_week_bounds(datetime.now().date())
+            start, end = _this_week_bounds(today or datetime.now().date())
             assignments = [
                 item
                 for item in assignments
-                if item.due_at and start <= item.due_at.replace(tzinfo=None) < end
+                if item.due_at and start <= item.due_at.date() < end
             ]
         assignments.sort(
             key=lambda item: item.due_at or datetime.max.replace(tzinfo=UTC)
         )
         if not assignments:
             return "I found no matching assignments in the latest Moodle snapshot."
-        return "Assignments:\n" + "\n".join(_format_assignment(item) for item in assignments)
+        course_names = {course.id: course.name for course in snapshot.courses}
+        return "Assignments:\n" + "\n".join(
+            _format_assignment(item, course_names.get(item.course_id)) for item in assignments
+        )
 
     return (
         "The current Tracy slice can answer course-list and assignment-deadline questions. "
