@@ -31,30 +31,41 @@ async def test_service_page_reads_response_before_navigation() -> None:
             assert not self.navigated
             return [{"error": False, "data": '{"courses": [{"id": 42}]}'}]
 
-        async def text(self) -> str:
-            if self.navigated:
-                raise RuntimeError("response body unavailable after navigation")
-            return '{"courses": [{"id": 42}]}'
+    class FakeRoute:
+        def __init__(self) -> None:
+            self.response = FakeResponse()
+            self.fulfilled = False
+
+        async def fetch(self) -> FakeResponse:
+            return self.response
+
+        async def fulfill(self, *, response: FakeResponse) -> None:
+            assert response is self.response
+            self.fulfilled = True
+
+        async def continue_(self) -> None:
+            return None
 
     class FakePage:
         def __init__(self) -> None:
-            self.listeners: list[tuple[str, object]] = []
+            self.routes: list[tuple[str, object]] = []
 
-        def on(self, event: str, callback: object) -> None:
-            self.listeners.append((event, callback))
+        async def route(self, pattern: str, callback: object) -> None:
+            self.routes.append((pattern, callback))
 
-        def remove_listener(self, event: str, callback: object) -> None:
-            self.listeners.remove((event, callback))
+        async def unroute(self, pattern: str, callback: object) -> None:
+            self.routes.remove((pattern, callback))
 
         async def goto(self, url: str, wait_until: str) -> None:
-            response = FakeResponse()
-            for event, callback in self.listeners:
-                if event != "response":
+            for pattern, callback in self.routes:
+                if pattern != "**/lib/ajax/service.php*":
                     continue
-                result = callback(response)  # type: ignore[operator]
+                route = FakeRoute()
+                result = callback(route)  # type: ignore[operator]
                 if inspect.isawaitable(result):
                     await result
-            response.navigated = True
+                assert route.fulfilled
+                route.response.navigated = True
 
         async def wait_for_timeout(self, milliseconds: int) -> None:
             return None

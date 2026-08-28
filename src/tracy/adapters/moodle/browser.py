@@ -354,24 +354,28 @@ class MoodleBrowserSource:
 
     async def _service_page(self, page: Any, url: str, method: str, timeout_error: Any) -> Any:
         responses: list[tuple[str, Any]] = []
+        route_pattern = "**/lib/ajax/service.php*"
 
-        async def capture_response(response: Any) -> None:
-            if "/lib/ajax/service.php" not in response.url:
-                return
+        async def capture_route(route: Any) -> None:
             try:
-                # Read the body while this response still belongs to the active
-                # navigation. Playwright may invalidate it after the page moves on.
-                payload = await response.json()
-                responses.append((response.url, _service_data(payload)))
-            except (json.JSONDecodeError, MoodleConnectionError):
+                response = await route.fetch()
+            except Exception:
+                await route.continue_()
                 return
+
+            try:
+                # Read the body before fulfilling the route. This keeps the
+                # response independent of any navigation that follows it.
+                responses.append((response.url, _service_data(await response.json())))
+            except (json.JSONDecodeError, MoodleConnectionError):
+                pass
             except Exception:
                 # Moodle pages issue several background service requests. A
-                # response that disappears during navigation is not the target
-                # request and should not mask the useful response from the page.
-                return
+                # malformed or disappearing response is not the target request.
+                pass
+            await route.fulfill(response=response)
 
-        page.on("response", capture_response)
+        await page.route(route_pattern, capture_route)
 
         try:
             await page.goto(url, wait_until="domcontentloaded")
@@ -381,7 +385,7 @@ class MoodleBrowserSource:
                 f"Moodle did not return the expected AJAX function {method} while loading {url}."
             ) from error
         finally:
-            page.remove_listener("response", capture_response)
+            await page.unroute(route_pattern, capture_route)
 
         for response_url, data in responses:
             if method in unquote(response_url) or self._service_result_matches(method, data):
