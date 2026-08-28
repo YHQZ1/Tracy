@@ -32,6 +32,8 @@ tracy index
 tracy ask "What assignments are due this week?"
 tracy ask "What is my attendance in DevOps Lab?"
 tracy ask "Which classes did I miss in Compiler Construction Lab?"
+tracy ask "How many classes can I miss to stay above 75% attendance?"
+tracy ask "What classes can I skip and stay above 75%?"
 tracy reminders
 ```
 
@@ -46,6 +48,9 @@ Attendance answers currently use the consolidated Moodle report and include each
 course's total, marked, and attended sessions plus percentage. Individual session
 history answers use the visible Moodle attendance activity for each course and
 include session date, status, batch/activity, and source URL.
+Attendance projections are calculated locally from the synced totals, including
+safe absence headroom, required classes to reach a target, and course-level skip
+suggestions.
 
 On the first sync, Tracy opens a browser window. Sign in to Moodle there and
 press Enter in the terminal. Tracy never asks for or stores your Moodle password.

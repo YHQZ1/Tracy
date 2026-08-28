@@ -104,12 +104,28 @@ async def answer_question(
         planner if planner is not None else _default_planner() if composer is None else None
     )
     course_names = tuple(course.name for course in snapshot.courses)
-    plan = heuristic_query_plan(question, course_names)
+    heuristic_plan = heuristic_query_plan(question, course_names)
+    plan = heuristic_plan
     if active_planner is not None:
         try:
-            plan = await active_planner.plan(
+            planned = await active_planner.plan(
                 question, tuple(course.name for course in snapshot.courses)
             )
+            if heuristic_plan.attendance_detail in {
+                "max_misses",
+                "required_sessions",
+                "skip_suggestions",
+            }:
+                plan = replace(
+                    planned,
+                    intent="attendance",
+                    attendance_detail=heuristic_plan.attendance_detail,
+                    attendance_threshold=heuristic_plan.attendance_threshold,
+                    group_by=heuristic_plan.group_by,
+                    course_query=heuristic_plan.course_query or planned.course_query,
+                )
+            else:
+                plan = planned
         except RuntimeError:
             pass
     if plan.intent in {"assignments", "attendance"} and plan.course_query is None:

@@ -66,6 +66,9 @@ sync already maps assignment modules to Moodle section titles, so labels such as
 consolidated student attendance report into typed per-course summaries and fetches
 individual session history from visible attendance modules. A matching
 batch-specific activity wins over a general activity with the same name.
+Attendance projections such as safe absences and required future sessions are
+calculated deterministically from those summaries; the LLM only helps classify the
+question and never performs the arithmetic.
 
 ## Initial constraints
 

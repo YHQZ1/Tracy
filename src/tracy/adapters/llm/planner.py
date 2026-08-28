@@ -18,8 +18,10 @@ _SYSTEM_PROMPT = (
     "only when none applies. time_range must be all, this_week, next_7_days, upcoming, or "
     "overdue. direction must be all, upcoming, or past. fields may contain name, due_date, "
     "cutoff_date, and submission_status. group_by may be course, overall, or null. For "
-    "attendance, attendance_detail must be summary or history and attendance_status must "
-    "be all, absent, present, late, or excused. Return "
+    "attendance, attendance_detail must be summary, history, max_misses, required_sessions, "
+    "or skip_suggestions and attendance_status must be all, absent, present, late, or "
+    "excused. For attendance calculations, attendance_threshold is a number from 0 to 100 "
+    "or null. Return "
     "course_query must be null when no course is named; otherwise copy the closest matching "
     "course name from the known Moodle courses. Return JSON only."
 )
@@ -27,6 +29,13 @@ _VALID_INTENTS = {"assignments", "courses", "documents", "attendance", "unsuppor
 _VALID_TIME_RANGES = {"all", "this_week", "next_7_days", "upcoming", "overdue"}
 _VALID_DIRECTIONS = {"all", "upcoming", "past"}
 _VALID_FIELDS = {"name", "due_date", "cutoff_date", "submission_status"}
+_VALID_ATTENDANCE_DETAILS = {
+    "summary",
+    "history",
+    "max_misses",
+    "required_sessions",
+    "skip_suggestions",
+}
 
 
 def _validated_plan(payload: Any) -> QueryPlan:
@@ -40,16 +49,23 @@ def _validated_plan(payload: Any) -> QueryPlan:
     fields = payload.get("fields", [])
     attendance_detail = payload.get("attendance_detail", "summary")
     attendance_status = payload.get("attendance_status", "all")
+    attendance_threshold = payload.get("attendance_threshold")
     if intent not in _VALID_INTENTS:
         raise RuntimeError("Ollama returned an unknown query intent.")
     if time_range not in _VALID_TIME_RANGES or direction not in _VALID_DIRECTIONS:
         raise RuntimeError("Ollama returned an invalid query time range.")
     if group_by not in {None, "course", "overall"}:
         raise RuntimeError("Ollama returned an invalid grouping.")
-    if attendance_detail not in {"summary", "history"}:
+    if attendance_detail not in _VALID_ATTENDANCE_DETAILS:
         raise RuntimeError("Ollama returned an invalid attendance detail.")
     if attendance_status not in {"all", "absent", "present", "late", "excused"}:
         raise RuntimeError("Ollama returned an invalid attendance status.")
+    if attendance_threshold is not None and (
+        isinstance(attendance_threshold, bool)
+        or not isinstance(attendance_threshold, (int, float))
+        or not 0 <= attendance_threshold <= 100
+    ):
+        raise RuntimeError("Ollama returned an invalid attendance threshold.")
     if not isinstance(fields, list) or any(field not in _VALID_FIELDS for field in fields):
         raise RuntimeError("Ollama returned invalid query fields.")
 
@@ -68,6 +84,7 @@ def _validated_plan(payload: Any) -> QueryPlan:
         course_query=course_query,
         attendance_detail=attendance_detail,
         attendance_status=attendance_status,
+        attendance_threshold=attendance_threshold,
     )
 
 

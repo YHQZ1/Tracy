@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime, timedelta
 
-from tracy.domain.entities import Assignment, Course, SyncSnapshot
+from tracy.domain.entities import Assignment, AttendanceSummary, Course, SyncSnapshot
 from tracy.domain.query import QueryPlan
 from tracy.domain.student import StudentContext
 
@@ -25,6 +25,7 @@ _COURSE_METADATA = {
     "sem",
     "semester",
 }
+_DEFAULT_ATTENDANCE_THRESHOLD = 75.0
 
 
 def heuristic_query_plan(
@@ -33,10 +34,23 @@ def heuristic_query_plan(
     """Provide an offline plan when the local planner is unavailable."""
 
     normalized = question.casefold()
-    if re.search(
+    explicit_attendance = re.search(
         r"\b(?:attendance|attended|present|miss|missed|missing|absent|absence)\b",
         normalized,
-    ):
+    )
+    attendance_projection = _attendance_projection(normalized)
+    if explicit_attendance or attendance_projection:
+        threshold = _attendance_threshold(normalized)
+        if attendance_projection:
+            return QueryPlan(
+                intent="attendance",
+                group_by="overall" if "overall" in normalized else None,
+                course_query=infer_course_query(question, course_names),
+                attendance_detail=attendance_projection,
+                attendance_threshold=(
+                    threshold if threshold is not None else _DEFAULT_ATTENDANCE_THRESHOLD
+                ),
+            )
         is_history = bool(
             re.search(
                 r"\b(?:history|miss|missed|missing|absent|absence|classes|sessions)\b",
@@ -89,6 +103,33 @@ def heuristic_query_plan(
     if "enrolled" in normalized or "list my courses" in normalized:
         return QueryPlan(intent="courses")
     return QueryPlan(intent="documents")
+
+
+def _attendance_projection(normalized: str) -> str | None:
+    """Recognize calculations and skip recommendations before the LLM is involved."""
+
+    has_class_term = bool(
+        re.search(r"\b(?:class|classes|lecture|lectures|session|sessions)\b", normalized)
+    )
+    if not has_class_term:
+        return None
+    if re.search(r"\bhow many\b.*\b(?:miss|skip|absen)\w*\b", normalized):
+        return "max_misses"
+    if re.search(
+        r"\bhow many\b.*\b(?:attend|reach|get to|raise|improve|need)\w*\b", normalized
+    ):
+        return "required_sessions"
+    if re.search(
+        r"\b(?:can|could|should|safe|safest|afford)\b.*\b(?:miss|skip|absen)\w*\b",
+        normalized,
+    ) or re.search(r"\b(?:safest|afford to miss)\b", normalized):
+        return "skip_suggestions"
+    return None
+
+
+def _attendance_threshold(normalized: str) -> float | None:
+    match = re.search(r"\b(\d+(?:\.\d+)?)\s*%", normalized)
+    return float(match.group(1)) if match else None
 
 
 def _normalize_course_name(value: str) -> str:
@@ -273,6 +314,52 @@ def _attendance_status_matches(status: str, requested: str) -> bool:
     return True
 
 
+def _attendance_percentage(attended: int, total: int) -> float:
+    return attended / total * 100 if total else 0.0
+
+
+def _max_additional_absences(attended: int, total: int, threshold: float) -> int:
+    if total == 0 or _attendance_percentage(attended, total) <= threshold:
+        return 0
+    if threshold <= 0:
+        return 0
+    misses = 0
+    while _attendance_percentage(attended, total + misses + 1) > threshold:
+        misses += 1
+    return misses
+
+
+def _required_sessions(attended: int, total: int, threshold: float) -> int | None:
+    if total == 0 or _attendance_percentage(attended, total) >= threshold:
+        return 0
+    if threshold >= 100:
+        return None
+    sessions = 0
+    while _attendance_percentage(attended + sessions, total + sessions) < threshold:
+        sessions += 1
+    return sessions
+
+
+def _source_line(summaries: list[AttendanceSummary]) -> str:
+    source_urls = sorted({item.source_url for item in summaries if item.source_url})
+    return f"\nsource: {source_urls[0]}" if source_urls else ""
+
+
+def _attendance_summaries_for_plan(
+    plan: QueryPlan, snapshot: SyncSnapshot
+) -> tuple[list[AttendanceSummary], str | None]:
+    summaries = list(snapshot.attendance)
+    if not plan.course_query:
+        return summaries, None
+    course_id = resolve_course_id(plan.course_query, snapshot.courses)
+    if course_id is None:
+        return [], (
+            "I could not identify a unique Moodle course matching "
+            f"{plan.course_query!r}."
+        )
+    return [item for item in summaries if item.course_id == course_id], None
+
+
 def answer_from_query_plan(
     plan: QueryPlan,
     snapshot: SyncSnapshot,
@@ -330,20 +417,127 @@ def answer_from_query_plan(
                 if record.source_url:
                     lines.append(f"  source: {record.source_url}")
             return "\n".join(lines)
-        summaries = list(snapshot.attendance)
-        if plan.course_query:
-            course_id = resolve_course_id(plan.course_query, snapshot.courses)
-            if course_id is None:
-                return (
-                    "I could not identify a unique Moodle course matching "
-                    f"{plan.course_query!r}."
-                )
-            summaries = [item for item in summaries if item.course_id == course_id]
+        summaries, course_error = _attendance_summaries_for_plan(plan, snapshot)
+        if course_error:
+            return course_error
         if not summaries:
             return "I could not find attendance data in the latest Moodle snapshot."
+        threshold = (
+            plan.attendance_threshold
+            if plan.attendance_threshold is not None
+            else _DEFAULT_ATTENDANCE_THRESHOLD
+        )
+        total_sessions = sum(item.total_sessions for item in summaries)
+        attended_sessions = sum(item.attended_sessions for item in summaries)
+        if plan.attendance_detail == "max_misses":
+            current_percentage = _attendance_percentage(attended_sessions, total_sessions)
+            safe_misses = _max_additional_absences(
+                attended_sessions, total_sessions, threshold
+            )
+            scope = (
+                "overall attendance"
+                if not plan.course_query
+                else f"{summaries[0].course_name} attendance"
+            )
+            if safe_misses == 0 and current_percentage <= threshold:
+                answer = (
+                    f"Current {scope} attendance is {attended_sessions}/{total_sessions} "
+                    f"({current_percentage:.2f}%), which is at or below {threshold:.2f}%. "
+                    "No additional absences are safe."
+                )
+            else:
+                safe_percentage = _attendance_percentage(
+                    attended_sessions, total_sessions + safe_misses
+                )
+                next_percentage = _attendance_percentage(
+                    attended_sessions, total_sessions + safe_misses + 1
+                )
+                answer = (
+                    f"You can miss up to {safe_misses} more classes in {scope} and stay "
+                    f"above {threshold:.2f}%. Current: {attended_sessions}/{total_sessions} "
+                    f"({current_percentage:.2f}%). After {safe_misses}: "
+                    f"{attended_sessions}/{total_sessions + safe_misses} "
+                    f"({safe_percentage:.2f}%). After {safe_misses + 1}: "
+                    f"{attended_sessions}/{total_sessions + safe_misses + 1} "
+                    f"({next_percentage:.2f}%)."
+                )
+            return f"{answer}{_source_line(summaries)}"
+        if plan.attendance_detail == "required_sessions":
+            current_percentage = _attendance_percentage(attended_sessions, total_sessions)
+            needed = _required_sessions(attended_sessions, total_sessions, threshold)
+            scope = (
+                "overall attendance"
+                if not plan.course_query
+                else f"{summaries[0].course_name} attendance"
+            )
+            if needed is None:
+                answer = (
+                    f"It is not possible to reach exactly {threshold:.2f}% in {scope} "
+                    "by only attending future classes."
+                )
+            elif needed == 0:
+                answer = (
+                    f"You already meet the {threshold:.2f}% target in {scope}: "
+                    f"{attended_sessions}/{total_sessions} ({current_percentage:.2f}%)."
+                )
+            else:
+                final_percentage = _attendance_percentage(
+                    attended_sessions + needed, total_sessions + needed
+                )
+                answer = (
+                    f"You need to attend the next {needed} classes in {scope} to reach "
+                    f"{threshold:.2f}%: {attended_sessions + needed}/"
+                    f"{total_sessions + needed} ({final_percentage:.2f}%)."
+                )
+            return f"{answer}{_source_line(summaries)}"
+        if plan.attendance_detail == "skip_suggestions":
+            safe: list[tuple[float, AttendanceSummary, int]] = []
+            unsafe: list[tuple[float, AttendanceSummary]] = []
+            for summary in summaries:
+                if summary.total_sessions == 0:
+                    continue
+                percentage = _attendance_percentage(
+                    summary.attended_sessions, summary.total_sessions
+                )
+                misses = _max_additional_absences(
+                    summary.attended_sessions, summary.total_sessions, threshold
+                )
+                if misses:
+                    safe.append((percentage, summary, misses))
+                else:
+                    unsafe.append((percentage, summary))
+            safe.sort(key=lambda item: (-item[0], item[1].course_name))
+            unsafe.sort(key=lambda item: (item[0], item[1].course_name))
+            overall_misses = _max_additional_absences(
+                attended_sessions, total_sessions, threshold
+            )
+            lines = [
+                f"Overall headroom: up to {overall_misses} more absences while staying "
+                f"above {threshold:.2f}%.",
+                f"Safest courses by individual {threshold:.2f}% buffer:",
+            ]
+            if safe:
+                for percentage, summary, misses in safe:
+                    after_percentage = _attendance_percentage(
+                        summary.attended_sessions,
+                        summary.total_sessions + misses,
+                    )
+                    lines.append(
+                        f"- {summary.course_name} — {summary.attended_sessions}/"
+                        f"{summary.total_sessions} ({percentage:.2f}%); can miss {misses} "
+                        f"more and remain at {after_percentage:.2f}%"
+                    )
+            else:
+                lines.append("- None of the courses currently has safe absence headroom.")
+            if unsafe:
+                lines.append(f"Already at or below {threshold:.2f}%; avoid more absences:")
+                for percentage, summary in unsafe:
+                    lines.append(
+                        f"- {summary.course_name} — {summary.attended_sessions}/"
+                        f"{summary.total_sessions} ({percentage:.2f}%)"
+                    )
+            return "\n".join(lines) + _source_line(summaries)
         if plan.group_by == "overall":
-            total_sessions = sum(item.total_sessions for item in summaries)
-            attended_sessions = sum(item.attended_sessions for item in summaries)
             if total_sessions == 0:
                 return "I could not calculate overall attendance from the latest Moodle snapshot."
             percentage = attended_sessions / total_sessions * 100

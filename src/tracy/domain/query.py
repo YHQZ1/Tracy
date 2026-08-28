@@ -4,7 +4,9 @@ from typing import Literal
 QueryIntent = Literal["assignments", "courses", "documents", "attendance", "unsupported"]
 QueryTimeRange = Literal["all", "this_week", "next_7_days", "upcoming", "overdue"]
 QueryDirection = Literal["all", "upcoming", "past"]
-AttendanceDetail = Literal["summary", "history"]
+AttendanceDetail = Literal[
+    "summary", "history", "max_misses", "required_sessions", "skip_suggestions"
+]
 AttendanceStatus = Literal["all", "absent", "present", "late", "excused"]
 
 
@@ -20,3 +22,4 @@ class QueryPlan:
     course_query: str | None = None
     attendance_detail: AttendanceDetail = "summary"
     attendance_status: AttendanceStatus = "all"
+    attendance_threshold: float | None = None

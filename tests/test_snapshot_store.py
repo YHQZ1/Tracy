@@ -267,6 +267,106 @@ def test_overall_attendance_uses_total_sessions_as_denominator() -> None:
     assert answer == "Overall attendance: 11/15 total sessions attended (73.33%)"
 
 
+def test_attendance_projection_calculates_maximum_safe_absences() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(Course(id="1", name="Databases"),),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="Databases",
+                total_sessions=142,
+                marked_sessions=142,
+                attended_sessions=116,
+                percentage=81.69,
+            ),
+        ),
+    )
+
+    answer = answer_from_query_plan(
+        QueryPlan(
+            intent="attendance",
+            group_by="overall",
+            attendance_detail="max_misses",
+            attendance_threshold=75,
+        ),
+        snapshot,
+    )
+
+    assert "up to 12 more classes" in answer
+    assert "116/154" in answer
+    assert "116/155" in answer
+
+
+def test_attendance_projection_suggests_courses_with_the_most_buffer() -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(
+            Course(id="1", name="Big Data Analytics Lab"),
+            Course(id="2", name="Compiler Construction"),
+        ),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="Big Data Analytics Lab",
+                total_sessions=7,
+                marked_sessions=7,
+                attended_sessions=7,
+                percentage=100,
+            ),
+            AttendanceSummary(
+                course_id="2",
+                course_name="Compiler Construction",
+                total_sessions=11,
+                marked_sessions=11,
+                attended_sessions=5,
+                percentage=45.45,
+            ),
+        ),
+    )
+
+    answer = answer_from_query_plan(
+        QueryPlan(
+            intent="attendance",
+            attendance_detail="skip_suggestions",
+            attendance_threshold=75,
+        ),
+        snapshot,
+    )
+
+    assert "Big Data Analytics Lab" in answer
+    assert "can miss 2 more" in answer
+    assert "Compiler Construction" in answer
+    assert "Already at or below 75.00%" in answer
+
+
+@pytest.mark.asyncio
+async def test_answer_question_keeps_projection_when_planner_returns_summary(tmp_path) -> None:
+    snapshot = SyncSnapshot(
+        synced_at=datetime.now(UTC),
+        courses=(Course(id="1", name="Databases"),),
+        attendance=(
+            AttendanceSummary(
+                course_id="1",
+                course_name="Databases",
+                total_sessions=142,
+                marked_sessions=142,
+                attended_sessions=116,
+                percentage=81.69,
+            ),
+        ),
+    )
+    JsonSnapshotStore(tmp_path).save(snapshot)
+
+    answer = await answer_question(
+        "How many classes can I miss to stay above 75% attendance?",
+        tmp_path,
+        planner=StaticPlanner(QueryPlan(intent="attendance")),
+    )
+
+    assert "up to 12 more classes" in answer
+
+
 class StaticPlanner:
     def __init__(self, plan: QueryPlan) -> None:
         self.plan_value = plan

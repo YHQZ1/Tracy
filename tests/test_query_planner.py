@@ -96,6 +96,25 @@ async def test_ollama_planner_accepts_attendance_history_intent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ollama_planner_accepts_attendance_projection_intent() -> None:
+    client = FakeClient(
+        FakeResponse(
+            '{"intent":"attendance","time_range":"all",'
+            '"direction":"all","fields":[],"group_by":"overall",'
+            '"course_query":null,"attendance_detail":"max_misses",'
+            '"attendance_status":"all","attendance_threshold":75}'
+        )
+    )
+
+    plan = await OllamaQuestionPlanner(client=client).plan(
+        "How many classes can I miss and stay above 75% attendance?"
+    )
+
+    assert plan.attendance_detail == "max_misses"
+    assert plan.attendance_threshold == 75
+
+
+@pytest.mark.asyncio
 async def test_ollama_planner_accepts_overall_attendance_grouping() -> None:
     client = FakeClient(
         FakeResponse(
@@ -129,3 +148,17 @@ def test_heuristic_planner_recognizes_missed_classes_as_attendance_history() -> 
     assert plan.attendance_detail == "history"
     assert plan.attendance_status == "absent"
     assert plan.course_query == "Compiler Construction Lab"
+
+
+def test_heuristic_planner_recognizes_attendance_projection_patterns() -> None:
+    max_misses = heuristic_query_plan(
+        "How many classes can I miss to stay above 75% attendance?"
+    )
+    needed = heuristic_query_plan("How many classes must I attend to reach 80%?")
+    suggestions = heuristic_query_plan("What classes can I skip and stay above 75%?")
+
+    assert max_misses.attendance_detail == "max_misses"
+    assert max_misses.attendance_threshold == 75
+    assert needed.attendance_detail == "required_sessions"
+    assert needed.attendance_threshold == 80
+    assert suggestions.attendance_detail == "skip_suggestions"
