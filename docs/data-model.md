@@ -4,6 +4,8 @@ The first canonical records are:
 
 - `Institution` — the Moodle site being connected.
 - `User` — the authenticated student within that institution.
+- `StudentContext` — local PRN, program, division, year, semester, and lab-batch preferences.
+- `LabBatch` — the selected batch for one lab course, such as `LAB 1` or `A2`.
 - `Course` — a course visible to the student.
 - `Enrollment` — the relationship between a user and course.
 - `Activity` — an assignment, quiz, lab, forum, or other Moodle activity.

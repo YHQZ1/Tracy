@@ -27,18 +27,24 @@ The first interface is intentionally a CLI:
 
 ```bash
 TRACY_MOODLE_BASE_URL=https://your-moodle.example.com tracy sync
+tracy setup
 tracy index
 tracy ask "What assignments are due this week?"
 tracy reminders
 ```
 
-Run `tracy index` after syncing to extract and search downloaded course documents.
+Run `tracy setup` after the first sync to save your local academic context. Tracy
+asks for your name, college email, PRN, program, division, year, semester, and
+the batch for each detected lab course. Run `tracy index` after syncing to
+extract and search downloaded course documents.
 
 Tracy uses a local Ollama model for query planning and synthesized document answers. The planner translates natural language into a validated query plan; Tracy executes facts against the local snapshot. Install Ollama, run `ollama pull gemma3:4b`, and keep Ollama running. Configure `TRACY_OLLAMA_BASE_URL` and `TRACY_OLLAMA_MODEL` in `.env` if needed. If Ollama is unavailable, Tracy falls back to deterministic query heuristics and citation-rich retrieval results.
 Document answers include the course, page or slide, snippet, and Moodle source URL.
 
 On the first sync, Tracy opens a browser window. Sign in to Moodle there and
 press Enter in the terminal. Tracy never asks for or stores your Moodle password.
+Student context is stored locally under `data/student-context.json`, which is
+ignored by Git.
 
 ## Architecture
 
