@@ -8,6 +8,14 @@ from tracy import __version__
 from tracy.application.answer_question import answer_question
 from tracy.application.create_reminders import create_reminders
 from tracy.application.index_documents import index_documents
+from tracy.application.schedule_sync import (
+    DEFAULT_INTERVAL_HOURS,
+    default_project_dir,
+    install_schedule,
+    launch_agent_path,
+    remove_schedule,
+    schedule_is_installed,
+)
 from tracy.application.setup_student_context import collect_student_context
 from tracy.application.sync_moodle import sync_moodle
 from tracy.config import get_settings
@@ -55,6 +63,7 @@ def _print_shell_help() -> None:
     console.print("  /index      Rebuild the document index")
     console.print("  /setup      Update your local student context")
     console.print("  /reminders  Show overdue and near-term assignment reminders")
+    console.print("  tracy schedule install  Enable unattended sync (every 6 hours by default)")
     console.print("  /help       Show this help")
     console.print("  /exit       Leave the Tracy shell")
 
@@ -191,6 +200,44 @@ def index() -> None:
         console.print(f"[yellow]{error}[/yellow]")
     else:
         console.print(f"Indexed {len(document_index.chunks)} document chunks.")
+
+
+@app.command()
+def schedule(
+    action: str = typer.Argument("status", help="install, remove, or status"),
+    interval_hours: int = typer.Option(
+        DEFAULT_INTERVAL_HOURS, min=1, help="Hours between unattended syncs when installing."
+    ),
+) -> None:
+    """Install, remove, or inspect Tracy's macOS scheduled sync."""
+
+    settings = get_settings()
+    normalized_action = action.casefold()
+    try:
+        if normalized_action == "install":
+            plist_path = install_schedule(
+                project_dir=default_project_dir(),
+                data_dir=settings.data_dir,
+                interval_hours=interval_hours,
+            )
+            console.print(
+                f"Scheduled sync installed every {interval_hours} hours: {plist_path}"
+            )
+        elif normalized_action == "remove":
+            plist_path = remove_schedule()
+            console.print(f"Scheduled sync removed: {plist_path}")
+        elif normalized_action == "status":
+            plist_path = launch_agent_path()
+            if schedule_is_installed():
+                console.print(f"Scheduled sync is configured: {plist_path}")
+            else:
+                console.print("Scheduled sync is not installed.")
+        else:
+            console.print(
+                "[yellow]Unknown schedule action. Use install, remove, or status.[/yellow]"
+            )
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        console.print(f"[yellow]{error}[/yellow]")
 
 
 @app.command()
