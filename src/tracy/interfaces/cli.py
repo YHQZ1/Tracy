@@ -22,6 +22,32 @@ app = typer.Typer(
 )
 console = Console()
 
+_NATURAL_REMINDER_COMMANDS = {
+    "reminders",
+    "show reminders",
+    "my reminders",
+    "show my reminders",
+}
+_CONVERSATIONAL_RESPONSES = {
+    "hi": "Hi! How can I help?",
+    "hello": "Hi! How can I help?",
+    "hey": "Hi! How can I help?",
+    "hi tracy": "Hi! How can I help?",
+    "hello tracy": "Hi! How can I help?",
+    "hey tracy": "Hi! How can I help?",
+    "thanks": "You're welcome!",
+    "thank you": "You're welcome!",
+    "thanks tracy": "You're welcome!",
+    "thank you tracy": "You're welcome!",
+    "okay": "Got it.",
+    "ok": "Got it.",
+    "cool": "Got it.",
+    "alright": "Got it.",
+    "all right": "Got it.",
+    "got it": "Got it.",
+}
+_GOODBYE_PHRASES = {"bye", "goodbye", "see you", "good night"}
+
 
 def _print_shell_help() -> None:
     console.print("Tracy commands:")
@@ -40,24 +66,35 @@ def interactive_shell() -> None:
     while True:
         try:
             question = input("tracy> ").strip()
+            normalized_question = " ".join(question.casefold().split())
         except (EOFError, KeyboardInterrupt):
             console.print()
             return
         if not question:
             continue
-        if question.casefold() in {"/exit", "/quit", "exit", "quit"}:
+        if (
+            normalized_question in {"/exit", "/quit", "exit", "quit"}
+            or normalized_question in _GOODBYE_PHRASES
+        ):
+            if normalized_question in _GOODBYE_PHRASES:
+                console.print("Goodbye!")
             return
-        if question.casefold() in {"/help", "help"}:
+        if normalized_question in {"/help", "help"}:
             _print_shell_help()
-        elif question.casefold() == "/sync":
+        elif normalized_question == "/sync":
             sync()
-        elif question.casefold() == "/index":
+        elif normalized_question == "/index":
             index()
-        elif question.casefold() == "/setup":
+        elif normalized_question == "/setup":
             setup()
-        elif question.casefold() == "/reminders":
+        elif (
+            normalized_question == "/reminders"
+            or normalized_question in _NATURAL_REMINDER_COMMANDS
+        ):
             reminders()
-        elif question.startswith("/"):
+        elif normalized_question in _CONVERSATIONAL_RESPONSES:
+            console.print(_CONVERSATIONAL_RESPONSES[normalized_question])
+        elif normalized_question.startswith("/"):
             console.print(f"[yellow]Unknown command: {question}[/yellow]")
         else:
             ask(question)
