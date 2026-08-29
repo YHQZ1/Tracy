@@ -231,10 +231,11 @@ Assignments clearly marked as submitted, graded, returned, or completed are
 excluded from actionable reminders. Reminder generation is deterministic and
 does not ask the LLM to invent deadlines.
 
-Scheduled syncing, persistent notification history, duplicate-notification
-prevention, and native macOS notifications are planned next. The current
-reminder command reads the latest local snapshot; run tracy sync when Moodle
-data may have changed.
+Scheduled sync can also deliver native macOS notifications. The scheduler enables
+notifications automatically; each run sends one grouped alert for newly actionable
+assignments and records sent reminder keys in data/notification-state.json so
+repeated runs do not spam you. The regular reminder command still reads the latest
+local snapshot; run tracy sync when Moodle data may have changed.
 
 ## Privacy and safety
 
@@ -261,6 +262,7 @@ Settings use the TRACY\_ environment prefix and can be placed in .env:
 TRACY_MOODLE_BASE_URL=https://your-moodle.example.com
 TRACY_DATA_DIR=data
 TRACY_TIMEZONE=Asia/Kolkata
+TRACY_NOTIFICATIONS_ENABLED=false
 TRACY_OLLAMA_BASE_URL=http://localhost:11434
 TRACY_OLLAMA_MODEL=gemma3:4b
 ```
@@ -270,6 +272,7 @@ Useful settings include:
 - TRACY_MOODLE_BASE_URL — Moodle installation URL
 - TRACY_DATA_DIR — local snapshot, browser profile, downloads, and index root
 - TRACY_TIMEZONE — timezone used when displaying dates and reminders
+- TRACY_NOTIFICATIONS_ENABLED — enable native macOS notifications after sync; scheduled sync sets this automatically
 - TRACY_OLLAMA_BASE_URL — local Ollama endpoint
 - TRACY_OLLAMA_MODEL — local model used by the planner and composer
 
@@ -323,14 +326,12 @@ Tracy is a working local prototype, not yet a hosted multi-user service. The
 next product milestones are:
 
 1. Finish CLI command ergonomics and add tracy doctor.
-2. Add scheduled sync and native macOS notifications.
-3. Persist reminder state and make notifications idempotent.
-4. Move the local snapshot from JSON to SQLite with migrations and incremental
+2. Move the local snapshot from JSON to SQLite with migrations and incremental
    updates.
-5. Improve Moodle-version/plugin coverage and sync observability.
-6. Add embedding retrieval and evaluation datasets when lexical retrieval stops
+3. Improve Moodle-version/plugin coverage and sync observability.
+4. Add embedding retrieval and evaluation datasets when lexical retrieval stops
    being sufficient.
-7. Consider a web interface and multi-user isolation only after the local flow
+5. Consider a web interface and multi-user isolation only after the local flow
    is reliable.
 
 The guiding rule is simple: use AI where language is messy, and use typed,

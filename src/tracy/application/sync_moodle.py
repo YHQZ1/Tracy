@@ -1,9 +1,15 @@
 """Synchronize Moodle data into Tracy's canonical representation."""
 
+import logging
+
 from tracy.adapters.moodle.browser import MoodleBrowserSource
+from tracy.adapters.notifications.macos import NotificationDeliveryError
+from tracy.application.notify_reminders import notify_reminders
 from tracy.config import Settings
 from tracy.domain.entities import SyncSnapshot
 from tracy.persistence.json_store import JsonSnapshotStore
+
+logger = logging.getLogger(__name__)
 
 
 async def sync_moodle(settings: Settings) -> SyncSnapshot:
@@ -23,4 +29,9 @@ async def sync_moodle(settings: Settings) -> SyncSnapshot:
     )
     snapshot = await source.sync()
     JsonSnapshotStore(settings.data_dir).save(snapshot)
+    if settings.notifications_enabled:
+        try:
+            notify_reminders(settings.data_dir, timezone=settings.timezone)
+        except NotificationDeliveryError as error:
+            logger.warning("Could not deliver Tracy reminders: %s", error)
     return snapshot

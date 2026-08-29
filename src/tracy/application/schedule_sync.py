@@ -46,6 +46,7 @@ def render_launchd_plist(
         "EnvironmentVariables": {
             "TRACY_DATA_DIR": str(absolute_data_dir),
             "TRACY_MOODLE_HEADLESS": "true",
+            "TRACY_NOTIFICATIONS_ENABLED": "true",
         },
         "ProcessType": "Background",
         "StandardOutPath": str(absolute_data_dir / "scheduler.log"),

@@ -28,6 +28,7 @@ def test_render_launchd_plist_runs_headless_sync_on_an_interval(tmp_path: Path) 
     assert plist["WorkingDirectory"] == str(tmp_path / "Tracy")
     assert plist["StartInterval"] == 21_600
     assert plist["EnvironmentVariables"]["TRACY_MOODLE_HEADLESS"] == "true"
+    assert plist["EnvironmentVariables"]["TRACY_NOTIFICATIONS_ENABLED"] == "true"
     assert plist["StandardOutPath"] == str(tmp_path / "data" / "scheduler.log")
     assert plist["StandardErrorPath"] == str(tmp_path / "data" / "scheduler-error.log")
 

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     moodle_token: str | None = None
     moodle_profile_dir: Path = Path("data/browser-profile")
     moodle_headless: bool = False
+    notifications_enabled: bool = False
     timezone: str = "Asia/Kolkata"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma3:4b"
