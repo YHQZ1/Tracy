@@ -133,6 +133,9 @@ uv run tracy ask "What assignments are due this week?"
 # Inspect overdue and near-term actionable assignments
 uv run tracy reminders
 
+# Check Tracy configuration and local health
+uv run tracy doctor
+
 # Start the interactive shell
 uv run tracy
 ```
@@ -145,6 +148,7 @@ tracy> Which classes did I miss?
 tracy> /sync
 tracy> /index
 tracy> /reminders
+tracy> /doctor
 tracy> /help
 tracy> /exit
 ```
@@ -325,7 +329,7 @@ See docs/architecture.md and docs/data-model.md for lower-level design.
 Tracy is a working local prototype, not yet a hosted multi-user service. The
 next product milestones are:
 
-1. Finish CLI command ergonomics and add tracy doctor.
+1. Improve CLI command ergonomics and diagnostic coverage.
 2. Move the local snapshot from JSON to SQLite with migrations and incremental
    updates.
 3. Improve Moodle-version/plugin coverage and sync observability.

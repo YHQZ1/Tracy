@@ -7,6 +7,7 @@ from rich.console import Console
 from tracy import __version__
 from tracy.application.answer_question import answer_question
 from tracy.application.create_reminders import create_reminders
+from tracy.application.doctor import run_doctor
 from tracy.application.index_documents import index_documents
 from tracy.application.schedule_sync import (
     DEFAULT_INTERVAL_HOURS,
@@ -63,6 +64,7 @@ def _print_shell_help() -> None:
     console.print("  /index      Rebuild the document index")
     console.print("  /setup      Update your local student context")
     console.print("  /reminders  Show overdue and near-term assignment reminders")
+    console.print("  /doctor     Check Tracy configuration and local health")
     console.print("  tracy schedule install  Enable unattended sync (every 6 hours by default)")
     console.print("  /help       Show this help")
     console.print("  /exit       Leave the Tracy shell")
@@ -96,6 +98,8 @@ def interactive_shell() -> None:
             index()
         elif normalized_question == "/setup":
             setup()
+        elif normalized_question == "/doctor":
+            doctor()
         elif (
             normalized_question == "/reminders"
             or normalized_question in _NATURAL_REMINDER_COMMANDS
@@ -139,6 +143,16 @@ def sync() -> None:
             f"{len(snapshot.attendance)} attendance summaries, and "
             f"{len(snapshot.attendance_records)} attendance records."
         )
+
+
+@app.command()
+def doctor() -> None:
+    """Check Tracy configuration and local runtime health."""
+
+    report = run_doctor(get_settings())
+    console.print(report.render())
+    if not report.ok:
+        raise typer.Exit(code=1)
 
 
 @app.command()
